@@ -37,9 +37,13 @@ object ReimbursementPacket {
     fun create(context: Context, trips: JSONArray, receipts: JSONArray,
                driver: String, card: String, signaturePath: String): Uri {
         require(hasTemplate(context)) { "Import the official Purchase Requisition PDF first" }
-        require(receipts.length() > 0) { "Save a fuel receipt first" }
+        require(receipts.length() == 1) { "One fuel receipt is required per reimbursement packet; archive completed receipts before starting another" }
+        require(trips.length() > 0) { "Record at least one trip before generating the packet" }
+        for (i in 0 until trips.length()) {
+            require(trips.getJSONObject(i).has("endOdometer")) { "Finish all trips before generating the packet" }
+        }
         val receipt = receipts.getJSONObject(receipts.length() - 1)
-        val sig = File(signaturePath)
+        val sig = if (signaturePath.isBlank()) File(context.filesDir, "missing_signature") else File(signaturePath)
         require(signaturePath.isNotBlank() && sig.isFile) { "Sign the Purchase Requisition first" }
         val doc = PdfDocument()
         var pageNumber = 0
@@ -92,6 +96,7 @@ object ReimbursementPacket {
                 while (options.outWidth / sample > 1800 || options.outHeight / sample > 2400) sample *= 2
                 options.inJustDecodeBounds = false
                 options.inSampleSize = sample
+                require(options.outWidth > 0 && options.outHeight > 0) { "Receipt image cannot be decoded" }
                 val image = (if (imageUri.scheme == "file") {
                     BitmapFactory.decodeFile(imageUri.path, options)
                 } else {
