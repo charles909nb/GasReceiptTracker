@@ -47,7 +47,7 @@ class MainActivity : Activity() {
     private fun draw(title: String) {
         val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
-        label("Gas Receipt Tracker - v1.4", 23f)
+        label("Gas Receipt Tracker - v1.5", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
         for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
@@ -199,6 +199,15 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == 204) {
+            val chosen = data?.data ?: return
+            try {
+                OfficialPurchaseRequisition.saveTemplate(this, chosen)
+                alert("Official purchase requisition template saved")
+            } catch (e: Exception) { alert("Template import failed: " + e.message) }
+            show("sheets")
+            return
+        }
         val uri = when (requestCode) {
             201 -> cameraUri
             202 -> data?.data
@@ -228,6 +237,26 @@ class MainActivity : Activity() {
             label((i + 1).toString() + ". " + t.optString("startDate") + " to " + t.optString("endDate", "OPEN") +
                 "\n" + t.optString("destination") + " - " + t.optString("purpose") +
                 "\n" + t.optString("startOdometer") + " to " + t.optString("endOdometer", "OPEN"))
+        }
+        action("Import original Karuk Excel Purchase Requisition (.xls)") {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 204)
+        }
+        label(if (java.io.File(filesDir, "Karuk_Purchase_Requisitions_Original.xls").exists())
+            "Official Excel template imported" else "Official Excel template not imported")
+        action("Create signed original Excel Purchase Requisition") {
+            if (receipts.length() == 0) { alert("Save a fuel receipt first"); return@action }
+            try {
+                val receipt = receipts.getJSONObject(receipts.length() - 1)
+                val sig = pref("signatureFile").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+                val uri = OfficialPurchaseRequisition.export(this, receipt, pref("driver"), pref("cardLast4"), sig)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/vnd.ms-excel"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Share original signed Excel requisition"))
+            } catch (e: Exception) { alert("Excel export failed: " + e.message) }
         }
         action("Create and email usage PDF") { exportPdf(entries, receipts) }
         label("PDF currently includes receipt images and the five-trip Vehicle Usage Sheet. The original signed Purchase Requisition is still being integrated.")
