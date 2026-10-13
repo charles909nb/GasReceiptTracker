@@ -64,7 +64,10 @@ object ReceiptReader {
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             recognizer.process(image).addOnSuccessListener { result ->
                 val lines = result.textBlocks.flatMap { it.lines }.map { it.text.trim() }.filter { it.isNotEmpty() }
-                val totalLine = lines.lastOrNull { it.contains("TOTAL", true) || it.contains("AMOUNT", true) || it.contains("SALE", true) }
+                val totalLine = lines.lastOrNull { line ->
+                    Regex("""\b(?:GRAND TOTAL|TOTAL DUE|AMOUNT DUE|TOTAL|SALE AMOUNT)\b""", RegexOption.IGNORE_CASE).containsMatchIn(line) &&
+                    !line.contains("SUBTOTAL", true) && !line.contains("TAX", true)
+                }
                 val total = totalLine?.let { amount.findAll(it).lastOrNull()?.groupValues?.get(1) } ?: ""
                 val gallonLine = lines.firstOrNull { it.contains("GAL", true) }
                 val qty = gallonLine?.let { gallons.find(it)?.groupValues?.get(1) ?: gallonsAfter.find(it)?.groupValues?.get(1) } ?: ""
@@ -72,7 +75,11 @@ object ReceiptReader {
                     Regex("""(?:PRICE|/GAL|P/G|UNIT)\s*[:\$]?\s*(\d{1,2}[.,]\d{3})""", RegexOption.IGNORE_CASE)
                         .find(line)?.groupValues?.get(1)
                 } ?: ""
-                done(FuelScan(lines.firstOrNull().orEmpty(), date.find(result.text)?.value.orEmpty(),
+                val station = lines.take(4).firstOrNull { line ->
+                    line.any { it.isLetter() } && !line.contains("RECEIPT", true) &&
+                    !line.contains("WELCOME", true) && !line.contains("THANK", true)
+                }.orEmpty()
+                done(FuelScan(station, date.find(result.text)?.value.orEmpty(),
                     qty, unitPrice, total, result.text))
                 recognizer.close()
             }.addOnFailureListener { recognizer.close(); done(null) }
