@@ -58,7 +58,10 @@ object TrackerBackup {
         for (key in listOf("trips","receipts","archives")) JSONArray(restored.optString(key, "[]"))
         files.forEach { (name, bytes) -> File(context.filesDir, name).writeBytes(bytes) }
         val edit = context.getSharedPreferences("usage_data", Context.MODE_PRIVATE).edit()
-        for (key in keys) if (restored.has(key)) edit.putString(key, restored.optString(key))
+        // Signature location must be reconstructed for the destination phone.
+        if (File(context.filesDir, "reimbursement_signature.png").exists())
+            edit.putString("signatureFile", File(context.filesDir, "reimbursement_signature.png").absolutePath)
+        for (key in keys) if (key != "signatureFile" && restored.has(key)) edit.putString(key, restored.optString(key))
         edit.commit()
     }
 }
