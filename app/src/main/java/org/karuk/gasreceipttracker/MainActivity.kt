@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("usage_data", MODE_PRIVATE) }
     private lateinit var body: LinearLayout
     private var cameraUri: Uri? = null
+    private var receiptUri: Uri? = null
     private val now get() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
     private fun data(key: String): JSONArray = try { JSONArray(prefs.getString(key, "[]")) } catch (_: Exception) { JSONArray() }
     private fun store(key: String, value: JSONArray) { prefs.edit().putString(key, value.toString()).commit() }
@@ -135,6 +136,22 @@ class MainActivity : Activity() {
         action("Choose existing receipt photo") {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
             startActivityForResult(intent, 202)
+        }
+        action("Read receipt photo (OCR)") {
+            val image = pref("pending_receipt")
+            if (image.isBlank()) { alert("Photograph or choose a receipt first"); return@action }
+            ReceiptReader.scan(this, Uri.parse(image)) { result ->
+                if (result == null) { alert("Unable to read receipt. Enter values manually."); return@scan }
+                station.setText(result.station)
+                if (result.date.isNotBlank()) date.setText(result.date)
+                if (result.gallons.isNotBlank()) gallons.setText(result.gallons)
+                if (result.price.isNotBlank()) price.setText(result.price)
+                if (result.total.isNotBlank()) cost.setText(result.total)
+                prefs.edit().putString("draftStation", station.text.toString())
+                    .putString("draftDate", date.text.toString()).putString("draftGallons", gallons.text.toString())
+                    .putString("draftPrice", price.text.toString()).putString("draftTotal", cost.text.toString()).commit()
+                alert("Receipt scanned. Check and correct the values before saving.")
+            }
         }
         action("Save fuel receipt") {
             val selected = pref("pending_receipt")
@@ -269,6 +286,22 @@ class MainActivity : Activity() {
             sendPacket(uri, receipts)
         } catch (e: Exception) { alert("PDF export failed: " + e.message) }
         finally { doc.close() }
+    }
+    private fun signatureScreen() {
+        draw("Purchase requisition signature")
+        label("Sign with your finger or stylus. This signature is saved privately for use on your purchase requisition.")
+        val pad = SignaturePad(this)
+        body.addView(pad)
+        action("Clear signature") { pad.clear() }
+        action("Save signature") {
+            if (!pad.hasSignature()) { alert("Please sign first"); return@action }
+            try {
+                val file = pad.save(this)
+                prefs.edit().putString("signatureFile", file.absolutePath).commit()
+                alert("Signature saved for purchase requisition")
+            } catch (e: Exception) { alert("Could not save signature: " + e.message) }
+        }
+        label(if (pref("signatureFile").isNotBlank()) "Saved signature available" else "No saved signature")
     }
     private fun renderTemplate(template: String, receipt: JSONObject): String {
         val values = mapOf(
