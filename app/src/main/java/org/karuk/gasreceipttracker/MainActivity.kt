@@ -134,9 +134,9 @@ class MainActivity : Activity() {
                 if (start.text.toString().toDoubleOrNull() == null || destination.text.isBlank() || purpose.text.isBlank()) {
                     alert("Enter odometer, destination and purpose"); return@action
                 }
-                prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.text.toString())
+                prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.selectedItem?.toString().orEmpty())
                     .putString("department", dept.text.toString()).commit()
-                entries.put(JSONObject().put("driver", driver.text.toString()).put("vehicle", vehicle.text.toString())
+                entries.put(JSONObject().put("driver", driver.text.toString()).put("vehicle", vehicle.selectedItem?.toString().orEmpty())
                     .put("department", dept.text.toString()).put("startDate", now)
                     .put("startOdometer", start.text.toString()).put("destination", destination.text.toString())
                     .put("purpose", purpose.text.toString()))
@@ -245,7 +245,7 @@ class MainActivity : Activity() {
                 alert("Attach receipt and enter odometer, gallons, and total cost"); return@action
             }
             receipts.put(JSONObject().put("station", station.text.toString()).put("date", date.text.toString())
-                .put("vehicle", vehicle.text.toString()).put("odometer", odometer.text.toString())
+                .put("vehicle", vehicle.selectedItem?.toString().orEmpty()).put("odometer", odometer.text.toString())
                 .put("gallons", gallons.text.toString()).put("price", price.text.toString())
                 .put("cost", cost.text.toString()).put("image", selected))
             store("receipts", receipts); prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").remove("draftOdometer").commit()
