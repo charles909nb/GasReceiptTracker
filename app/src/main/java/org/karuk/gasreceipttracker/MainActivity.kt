@@ -281,7 +281,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) { alert("Packet creation failed: " + e.message) }
         }
         action("Create and email usage PDF") { exportPdf(entries, receipts) }
-        label("PDF currently includes receipt images and the five-trip Vehicle Usage Sheet. The original signed Purchase Requisition is still being integrated.")
+        label("Review the generated packet before emailing. The official requisition field alignment still requires verification.")
         action("Archive current sheet and start a new one") {
             var open = false
             for (i in 0 until entries.length()) if (!entries.getJSONObject(i).has("endOdometer")) open = true
