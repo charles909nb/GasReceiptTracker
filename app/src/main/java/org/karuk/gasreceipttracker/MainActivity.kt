@@ -505,18 +505,4 @@ class MainActivity : Activity() {
         startActivity(Intent.createChooser(email, "Email reimbursement PDF"))
     }
 
-    private fun signatureScreen() {
-        draw("Reimbursement signature")
-        label("Sign with your finger or stylus. Your signature stays in the app's private storage. It must be reviewed before a reimbursement is submitted.")
-        val pad = SignaturePad(this)
-        body.addView(pad)
-        action("Clear signature") { pad.clear() }
-        action("Save signature") {
-            if (!pad.hasSignature()) { alert("Please sign first"); return@action }
-            try { pad.save(this); alert("Signature saved on device") }
-            catch (e: Exception) { alert("Signature could not be saved: " + e.message) }
-        }
-        label("Signature capture is ready. Inserting it into the original official Excel purchase requisition is not yet implemented.")
-    }
-
 }
