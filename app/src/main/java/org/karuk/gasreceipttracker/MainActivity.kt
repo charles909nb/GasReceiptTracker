@@ -43,9 +43,9 @@ class MainActivity : Activity() {
     private fun draw(title: String) {
         val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
-        label("Gas Receipt Tracker - v1.3", 23f)
+        label("Gas Receipt Tracker - v1.4", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
-        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email")) {
+        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
             b.setOnClickListener { show(dest) }
         }
@@ -53,7 +53,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
     private fun show(where: String) {
-        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); else -> trips() }
+        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); "sign" -> signatureScreen(); else -> trips() }
     }
     private fun trips() {
         draw("Vehicle usage / Trips")
@@ -109,14 +109,15 @@ class MainActivity : Activity() {
         draw("Fuel receipts")
         val receipts = data("receipts")
         label("Attach a full-size receipt photograph and enter fueling information.")
-        val station = edit("Gas station")
-        val date = edit("Fuel date and time", now)
+        val station = edit("Gas station", pref("ocr_station"))
+        val date = edit("Fuel date and time", pref("ocr_date").ifBlank { now })
         val vehicle = edit("Vehicle number", pref("vehicle"))
         val odometer = edit("Odometer at fueling", number = true)
-        val gallons = edit("Total gallons", number = true)
-        val price = edit("Price per gallon", number = true)
-        val cost = edit("Total cost", number = true)
+        val gallons = edit("Total gallons", pref("ocr_gallons"), number = true)
+        val price = edit("Price per gallon", pref("ocr_price"), number = true)
+        val cost = edit("Total cost", pref("ocr_total"), number = true)
         label(if (pref("pending_receipt").isBlank()) "No receipt image attached" else "Receipt image attached")
+        label("Receipt scanning suggests values. Check each value against the image before saving.", 14f)
         action("Take receipt photo") {
             try {
                 val values = ContentValues().apply {
@@ -145,7 +146,7 @@ class MainActivity : Activity() {
                 .put("vehicle", vehicle.text.toString()).put("odometer", odometer.text.toString())
                 .put("gallons", gallons.text.toString()).put("price", price.text.toString())
                 .put("cost", cost.text.toString()).put("image", selected))
-            store("receipts", receipts); prefs.edit().remove("pending_receipt").commit()
+            store("receipts", receipts); prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").commit()
             alert("Fuel receipt saved"); show("fuel")
         }
         label("Saved receipts (" + receipts.length() + ")", 20f)
@@ -171,7 +172,12 @@ class MainActivity : Activity() {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) {}
             prefs.edit().putString("pending_receipt", uri.toString()).commit()
-            show("fuel")
+            ReceiptReader.scan(this, uri) { scan ->
+                if (scan != null) prefs.edit().putString("ocr_station", scan.station)
+                    .putString("ocr_date", scan.date).putString("ocr_gallons", scan.gallons)
+                    .putString("ocr_price", scan.price).putString("ocr_total", scan.total).commit()
+                runOnUiThread { show("fuel"); alert(if (scan == null) "Receipt scan failed; enter details manually" else "Receipt scanned; please verify values") }
+            }
         }
     }
     private fun sheets() {
@@ -326,6 +332,20 @@ class MainActivity : Activity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(email, "Email reimbursement PDF"))
+    }
+
+    private fun signatureScreen() {
+        draw("Reimbursement signature")
+        label("Sign with your finger or stylus. Your signature stays in the app's private storage. It must be reviewed before a reimbursement is submitted.")
+        val pad = SignaturePad(this)
+        body.addView(pad)
+        action("Clear signature") { pad.clear() }
+        action("Save signature") {
+            if (!pad.hasSignature()) { alert("Please sign first"); return@action }
+            try { pad.save(this); alert("Signature saved on device") }
+            catch (e: Exception) { alert("Signature could not be saved: " + e.message) }
+        }
+        label("Signature capture is ready. Inserting it into the original official Excel purchase requisition is not yet implemented.")
     }
 
 }
