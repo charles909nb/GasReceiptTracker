@@ -171,8 +171,9 @@ class MainActivity : Activity() {
         }
         action("Save fuel receipt") {
             val selected = pref("pending_receipt")
-            if (selected.isBlank() || odometer.text.toString().toDoubleOrNull() == null ||
-                gallons.text.toString().toDoubleOrNull() == null || cost.text.toString().toDoubleOrNull() == null) {
+            if (selected.isBlank() || (odometer.text.toString().toDoubleOrNull() ?: -1.0) < 0.0 ||
+                (gallons.text.toString().toDoubleOrNull() ?: 0.0) <= 0.0 ||
+                (cost.text.toString().toDoubleOrNull() ?: 0.0) <= 0.0) {
                 alert("Attach receipt and enter odometer, gallons, and total cost"); return@action
             }
             receipts.put(JSONObject().put("station", station.text.toString()).put("date", date.text.toString())
@@ -227,13 +228,28 @@ class MainActivity : Activity() {
             if (requestCode == 202) try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) {}
-            prefs.edit().putString("pending_receipt", uri.toString()).commit()
-            ReceiptReader.scan(this, uri) { scan ->
-                if (scan != null) prefs.edit().putString("ocr_station", scan.station)
-                    .putString("ocr_date", scan.date).putString("ocr_gallons", scan.gallons)
-                    .putString("ocr_price", scan.price).putString("ocr_total", scan.total).commit()
-                runOnUiThread { show("fuel"); alert(if (scan == null) "Receipt scan failed; enter details manually" else "Receipt scanned; please verify values") }
-            }
+            try {
+                // Scanner URIs can expire. Keep a private copy before OCR and later PDF export.
+                val target = java.io.File(filesDir, "receipt_" + System.currentTimeMillis() + ".jpg")
+                contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input) { "Receipt image cannot be opened" }
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                val saved = Uri.fromFile(target)
+                prefs.edit().putString("pending_receipt", saved.toString())
+                    .remove("ocr_station").remove("ocr_date").remove("ocr_gallons")
+                    .remove("ocr_price").remove("ocr_total").commit()
+                ReceiptReader.scan(this, saved) { scan ->
+                    runOnUiThread {
+                        if (scan != null) prefs.edit().putString("ocr_station", scan.station)
+                            .putString("ocr_date", scan.date).putString("ocr_gallons", scan.gallons)
+                            .putString("ocr_price", scan.price).putString("ocr_total", scan.total).commit()
+                        show("fuel")
+                        alert(if (scan == null) "Receipt scan failed; enter details manually"
+                              else "Receipt scanned; please verify values")
+                    }
+                }
+            } catch (e: Exception) { alert("Could not save receipt: " + e.message) }
         }
     }
     private fun sheets() {
