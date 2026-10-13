@@ -282,7 +282,12 @@ class MainActivity : Activity() {
         for (i in 0 until receipts.length()) {
             val r = receipts.getJSONObject(i)
             try {
-                val bitmap = contentResolver.openInputStream(Uri.parse(r.getString("image"))).use { BitmapFactory.decodeStream(it) } ?: continue
+                val imageUri = Uri.parse(r.getString("image"))
+                val bitmap = if (imageUri.scheme == "file") {
+                    BitmapFactory.decodeFile(imageUri.path)
+                } else {
+                    contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it) }
+                } ?: continue
                 val receiptPage = newPage()
                 line(receiptPage.canvas, "ORIGINAL RECEIPT IMAGE " + (i + 1) + " - " + r.optString("date"), 36f, 13f)
                 val scale = minOf(540f / bitmap.width, 715f / bitmap.height)
