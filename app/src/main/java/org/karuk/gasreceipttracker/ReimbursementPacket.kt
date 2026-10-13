@@ -81,7 +81,8 @@ object ReimbursementPacket {
             for (i in 0 until receipts.length()) {
                 val r = receipts.getJSONObject(i)
                 val imageUri = Uri.parse(r.getString("image"))
-                val image = context.contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it) }
+                val image = if (imageUri.scheme == "file") BitmapFactory.decodeFile(imageUri.path) else
+                    context.contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it) }
                     ?: throw IllegalStateException("Receipt image " + (i + 1) + " is unavailable")
                 val page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, ++pageNumber).create())
                 val canvas = page.canvas
