@@ -1,5 +1,8 @@
 package org.karuk.gasreceipttracker
 
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import android.app.Activity
 import android.os.Bundle
 import android.content.Intent
@@ -119,6 +122,19 @@ class MainActivity : Activity() {
         val cost = edit("Total cost", pref("ocr_total"), number = true)
         label(if (pref("pending_receipt").isBlank()) "No receipt image attached" else "Receipt image attached")
         label("Receipt scanning suggests values. Check each value against the image before saving.", 14f)
+        action("Scan and crop receipt automatically") {
+            val options = GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(1)
+                .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+            GmsDocumentScanning.getClient(options).getStartScanIntent(this)
+                .addOnSuccessListener { sender ->
+                    try { startIntentSenderForResult(sender, 203, null, 0, 0, 0) }
+                    catch (e: Exception) { alert("Scanner could not open: " + e.message) }
+                }.addOnFailureListener { alert("Scanner unavailable. Use camera or gallery.") }
+        }
         action("Take receipt photo") {
             try {
                 val values = ContentValues().apply {
@@ -183,7 +199,12 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
-        val uri = if (requestCode == 201) cameraUri else if (requestCode == 202) data?.data else null
+        val uri = when (requestCode) {
+            201 -> cameraUri
+            202 -> data?.data
+            203 -> GmsDocumentScanningResult.fromActivityResultIntent(data)?.pages?.firstOrNull()?.imageUri
+            else -> null
+        }
         if (uri != null) {
             if (requestCode == 202) try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
