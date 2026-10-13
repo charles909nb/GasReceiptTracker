@@ -50,10 +50,11 @@ class MainActivity : Activity() {
         label("Gas Receipt Tracker - v1.6", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
         for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign", "Backup" to "backup")) {
-            val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
+            val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(-2, -2))
             b.setOnClickListener { show(dest) }
         }
-        body.addView(nav); label(title, 22f)
+        val navScroll = HorizontalScrollView(this); navScroll.isHorizontalScrollBarEnabled = false
+        navScroll.addView(nav); body.addView(navScroll); label(title, 22f)
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
     private fun show(where: String) {
@@ -327,7 +328,17 @@ class MainActivity : Activity() {
             store("archives", history); store("trips", JSONArray()); store("receipts", JSONArray())
             alert("Sheet archived. New sheet started."); show("sheets")
         }
-        label("Archived sheets: " + data("archives").length())
+        val archives = data("archives")
+        label("Archived sheets: " + archives.length())
+        for (i in archives.length() - 1 downTo 0) {
+            val archive = archives.optJSONObject(i) ?: continue
+            label("Archived " + archive.optString("archivedAt") +
+                " - " + archive.optJSONArray("trips")?.length() + " trips")
+            action("Export archived sheet " + (i + 1)) {
+                exportPdf(archive.optJSONArray("trips") ?: JSONArray(),
+                    archive.optJSONArray("receipts") ?: JSONArray())
+            }
+        }
     }
     private fun exportPdf(entries: JSONArray, receipts: JSONArray) {
         if (entries.length() == 0 && receipts.length() == 0) { alert("No records to export"); return }
