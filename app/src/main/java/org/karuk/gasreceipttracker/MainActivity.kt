@@ -3,9 +3,16 @@ package org.karuk.gasreceipttracker
 import android.app.Activity
 import android.os.Bundle
 import android.content.Intent
-import android.graphics.Typeface
-import android.view.ViewGroup
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import android.os.Build
 import android.widget.*
+import android.text.InputType
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -14,89 +21,249 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("usage_data", MODE_PRIVATE) }
-    private val trips get() = JSONArray(prefs.getString("trips", "[]"))
+    private lateinit var body: LinearLayout
+    private var cameraUri: Uri? = null
     private val now get() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
-    private lateinit var page: LinearLayout
-    private fun save(items: JSONArray) { prefs.edit().putString("trips", items.toString()).commit() }
-    private fun field(label: String, initial: String = ""): EditText {
-        val e = EditText(this); e.hint = label; e.setSingleLine(true); e.setText(initial)
-        page.addView(e, LinearLayout.LayoutParams(-1, -2)); return e
+    private fun data(key: String): JSONArray = try { JSONArray(prefs.getString(key, "[]")) } catch (_: Exception) { JSONArray() }
+    private fun store(key: String, value: JSONArray) { prefs.edit().putString(key, value.toString()).commit() }
+    private fun pref(key: String) = prefs.getString(key, "") ?: ""
+    private fun label(text: String, size: Float = 18f) {
+        val v = TextView(this); v.text = text; v.textSize = size; v.setTextColor(Color.DKGRAY)
+        v.setPadding(0, 10, 0, 10); body.addView(v)
     }
-    private fun button(label: String, action: () -> Unit) {
-        val b = Button(this); b.text = label; page.addView(b); b.setOnClickListener { action() }
+    private fun edit(hint: String, value: String = "", number: Boolean = false): EditText {
+        val e = EditText(this); e.hint = hint; e.setText(value); e.setSingleLine(true)
+        if (number) e.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        body.addView(e); return e
     }
-    private fun title(label: String) {
-        val t = TextView(this); t.text = label; t.textSize = 22f; t.setTypeface(null, Typeface.BOLD); t.setPadding(0, 18, 0, 12); page.addView(t)
+    private fun action(text: String, run: () -> Unit) {
+        val b = Button(this); b.text = text; body.addView(b); b.setOnClickListener { run() }
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); home() }
-    private fun layout() {
-        val scroll = ScrollView(this); page = LinearLayout(this); page.orientation = LinearLayout.VERTICAL
-        page.setPadding(24, 20, 24, 24); scroll.addView(page); setContentView(scroll)
-    }
-    private fun home() {
-        layout(); title("Vehicle Usage Tracker 1.1")
-        val driver = field("Driver name", prefs.getString("driver", "") ?: "")
-        val vehicle = field("Vehicle number", prefs.getString("vehicle", "") ?: "")
-        val department = field("Department / program", prefs.getString("department", "") ?: "")
-        button("Save driver and vehicle") {
-            prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.text.toString())
-                .putString("department", department.text.toString()).commit()
-            Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+    private fun alert(text: String) { Toast.makeText(this, text, Toast.LENGTH_LONG).show() }
+    private fun draw(title: String) {
+        val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
+        body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
+        label("Gas Receipt Tracker - v1.2", 23f)
+        val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
+        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets")) {
+            val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
+            b.setOnClickListener { show(dest) }
         }
-        val list = trips
+        body.addView(nav); label(title, 22f)
+    }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
+    private fun show(where: String) {
+        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); else -> trips() }
+    }
+    private fun trips() {
+        draw("Vehicle usage / Trips")
+        val driver = edit("Driver's name", pref("driver"))
+        val vehicle = edit("Vehicle number", pref("vehicle"))
+        val dept = edit("Department / program", pref("department"))
+        action("Save driver and vehicle") {
+            prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.text.toString())
+                .putString("department", dept.text.toString()).commit()
+            alert("Driver and vehicle saved")
+        }
+        val entries = data("trips")
         var active = -1
-        for (i in 0 until list.length()) if (!list.getJSONObject(i).has("endOdometer")) active = i
+        for (i in 0 until entries.length()) if (!entries.getJSONObject(i).has("endOdometer")) active = i
         if (active >= 0) {
-            val item = list.getJSONObject(active)
-            title("Trip in progress")
-            TextView(this).also { it.text = "${item.optString("destination")} — ${item.optString("purpose")}\nStart: ${item.optString("startOdometer")}"; page.addView(it) }
-            val ending = field("Ending odometer")
-            button("End trip") {
-                if (ending.text.toString().toDoubleOrNull() == null) { ending.error = "Enter a valid odometer"; return@button }
-                if (ending.text.toString().toDouble() < item.optDouble("startOdometer")) { ending.error = "Must be at least starting odometer"; return@button }
-                item.put("endOdometer", ending.text.toString()).put("endDate", now)
-                save(list); home()
+            val trip = entries.getJSONObject(active)
+            label("Trip in progress: " + trip.optString("destination") + "\n" + trip.optString("purpose") + "\nStarting odometer: " + trip.optString("startOdometer"))
+            val end = edit("Ending odometer", number = true)
+            action("End trip") {
+                val od = end.text.toString().toDoubleOrNull()
+                if (od == null || od < trip.optDouble("startOdometer")) { end.error = "Enter a valid ending odometer"; return@action }
+                trip.put("endOdometer", end.text.toString()).put("endDate", now)
+                store("trips", entries); show("home")
             }
         } else {
-            title("Start a trip")
-            val start = field("Starting odometer")
-            val destination = field("Destination")
-            val purpose = field("Purpose of travel")
-            button("Start trip") {
+            label("Start a trip")
+            val start = edit("Starting odometer", number = true)
+            val destination = edit("Destination")
+            val purpose = edit("Purpose of travel")
+            action("Start trip") {
                 if (start.text.toString().toDoubleOrNull() == null || destination.text.isBlank() || purpose.text.isBlank()) {
-                    Toast.makeText(this, "Enter odometer, destination and purpose", Toast.LENGTH_LONG).show(); return@button
+                    alert("Enter odometer, destination and purpose"); return@action
                 }
                 prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.text.toString())
-                    .putString("department", department.text.toString()).commit()
-                val entry = JSONObject().put("startDate", now).put("startOdometer", start.text.toString())
-                    .put("destination", destination.text.toString()).put("purpose", purpose.text.toString())
-                    .put("driver", driver.text.toString()).put("vehicle", vehicle.text.toString())
-                    .put("department", department.text.toString())
-                list.put(entry); save(list); home()
+                    .putString("department", dept.text.toString()).commit()
+                entries.put(JSONObject().put("driver", driver.text.toString()).put("vehicle", vehicle.text.toString())
+                    .put("department", dept.text.toString()).put("startDate", now)
+                    .put("startOdometer", start.text.toString()).put("destination", destination.text.toString())
+                    .put("purpose", purpose.text.toString()))
+                store("trips", entries); show("home")
             }
         }
-        title("Current usage sheet (${list.length()} trips)")
-        for (i in 0 until list.length()) {
-            val item = list.getJSONObject(i)
-            val view = TextView(this)
-            view.text = "${i + 1}. ${item.optString("destination")} — ${item.optString("purpose")}\n${item.optString("startDate")} | ${item.optString("startOdometer")} → ${item.optString("endOdometer", "IN PROGRESS")}"
-            view.setPadding(0, 8, 0, 8); page.addView(view)
+        label("Current sheet - " + entries.length() + " trips", 20f)
+        for (i in 0 until entries.length()) {
+            val j = entries.getJSONObject(i)
+            label((i + 1).toString() + ". " + j.optString("destination") + " - " + j.optString("purpose") +
+                "\n" + j.optString("startOdometer") + " to " + j.optString("endOdometer", "OPEN"))
         }
-        button("Share current usage sheet (text)") {
-            val text = StringBuilder("VEHICLE USAGE SHEET\nDriver: ${driver.text}\nVehicle: ${vehicle.text}\nDepartment: ${department.text}\n\n")
-            for (i in 0 until list.length()) {
-                val j = list.getJSONObject(i)
-                text.append("${i + 1}. ${j.optString("startDate")} | ${j.optString("destination")} | ${j.optString("purpose")} | ${j.optString("startOdometer")} to ${j.optString("endOdometer", "Open")}\n")
+        action("Record fuel purchase") { show("fuel") }
+        action("Preview / export vehicle usage sheet") { show("sheets") }
+    }
+    private fun fuel() {
+        draw("Fuel receipts")
+        val receipts = data("receipts")
+        label("Attach a full-size receipt photograph and enter fueling information.")
+        val station = edit("Gas station")
+        val date = edit("Fuel date and time", now)
+        val vehicle = edit("Vehicle number", pref("vehicle"))
+        val odometer = edit("Odometer at fueling", number = true)
+        val gallons = edit("Total gallons", number = true)
+        val price = edit("Price per gallon", number = true)
+        val cost = edit("Total cost", number = true)
+        label(if (pref("pending_receipt").isBlank()) "No receipt image attached" else "Receipt image attached")
+        action("Take receipt photo") {
+            try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "fuel_" + System.currentTimeMillis() + ".jpg")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    if (Build.VERSION.SDK_INT >= 29) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/GasReceiptTracker")
+                }
+                cameraUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                startActivityForResult(intent, 201)
+            } catch (e: Exception) { alert("Camera unavailable: " + e.message) }
+        }
+        action("Choose existing receipt photo") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
+            startActivityForResult(intent, 202)
+        }
+        action("Save fuel receipt") {
+            val selected = pref("pending_receipt")
+            if (selected.isBlank() || odometer.text.toString().toDoubleOrNull() == null ||
+                gallons.text.toString().toDoubleOrNull() == null || cost.text.toString().toDoubleOrNull() == null) {
+                alert("Attach receipt and enter odometer, gallons, and total cost"); return@action
             }
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text.toString()), "Share usage sheet"))
+            receipts.put(JSONObject().put("station", station.text.toString()).put("date", date.text.toString())
+                .put("vehicle", vehicle.text.toString()).put("odometer", odometer.text.toString())
+                .put("gallons", gallons.text.toString()).put("price", price.text.toString())
+                .put("cost", cost.text.toString()).put("image", selected))
+            store("receipts", receipts); prefs.edit().remove("pending_receipt").commit()
+            alert("Fuel receipt saved"); show("fuel")
         }
-        button("Archive sheet and start new") {
-            if (list.length() == 0) return@button
-            val archive = JSONArray(prefs.getString("archives", "[]"))
-            archive.put(JSONObject().put("archivedAt", now).put("trips", list))
-            prefs.edit().putString("archives", archive.toString()).putString("trips", "[]").commit()
-            home()
+        label("Saved receipts (" + receipts.length() + ")", 20f)
+        for (i in receipts.length() - 1 downTo 0) {
+            val r = receipts.getJSONObject(i)
+            label(r.optString("date") + " - " + r.optString("station") + "\n" +
+                r.optString("gallons") + " gallons, $" + r.optString("cost") + ", Vehicle " + r.optString("vehicle"))
+            action("View receipt " + (i + 1)) {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(r.getString("image")), "image/*")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                } catch (_: Exception) { alert("Receipt image unavailable") }
+            }
         }
-        TextView(this).also { it.text = "Draft prototype: usage entries save locally. PDF, receipt attachment, fueling totals, and Excel export are not implemented yet."; page.addView(it) }
+    }
+    @Deprecated("Deprecated in Android")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = if (requestCode == 201) cameraUri else if (requestCode == 202) data?.data else null
+        if (uri != null) {
+            if (requestCode == 202) try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+            prefs.edit().putString("pending_receipt", uri.toString()).commit()
+            show("fuel")
+        }
+    }
+    private fun sheets() {
+        draw("Usage sheets / Export")
+        val entries = data("trips")
+        val receipts = data("receipts")
+        label("Current sheet: " + entries.length() + " trips, " + receipts.length() + " saved fuel receipts")
+        for (i in 0 until entries.length()) {
+            val t = entries.getJSONObject(i)
+            label((i + 1).toString() + ". " + t.optString("startDate") + " to " + t.optString("endDate", "OPEN") +
+                "\n" + t.optString("destination") + " - " + t.optString("purpose") +
+                "\n" + t.optString("startOdometer") + " to " + t.optString("endOdometer", "OPEN"))
+        }
+        action("Create and share usage PDF") { exportPdf(entries, receipts) }
+        label("The PDF contains typed vehicle usage and receipt images. Official Excel purchase requisition export is not yet included.")
+        action("Archive current sheet and start a new one") {
+            var open = false
+            for (i in 0 until entries.length()) if (!entries.getJSONObject(i).has("endOdometer")) open = true
+            if (open) { alert("End the active trip before archiving"); return@action }
+            if (entries.length() == 0) { alert("No trips to archive"); return@action }
+            val history = data("archives")
+            history.put(JSONObject().put("archivedAt", now).put("trips", entries).put("receipts", receipts))
+            store("archives", history); store("trips", JSONArray()); store("receipts", JSONArray())
+            alert("Sheet archived. New sheet started."); show("sheets")
+        }
+        label("Archived sheets: " + data("archives").length())
+    }
+    private fun exportPdf(entries: JSONArray, receipts: JSONArray) {
+        if (entries.length() == 0 && receipts.length() == 0) { alert("No records to export"); return }
+        val doc = PdfDocument()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 12f }
+        var pageNo = 0
+        fun newPage(): PdfDocument.Page {
+            pageNo++
+            return doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
+        }
+        fun line(canvas: android.graphics.Canvas, value: String, y: Float, size: Float = 12f) {
+            paint.textSize = size
+            canvas.drawText(value.take(95), 35f, y, paint)
+        }
+        var page = newPage()
+        var canvas = page.canvas
+        line(canvas, "VEHICLE USAGE SHEET", 45f, 20f)
+        line(canvas, "Driver: " + pref("driver") + "   Vehicle #: " + pref("vehicle") + "   Department: " + pref("department"), 76f)
+        var y = 105f
+        for (i in 0 until entries.length()) {
+            if (y > 665f) { doc.finishPage(page); page = newPage(); canvas = page.canvas; y = 45f }
+            val t = entries.getJSONObject(i)
+            line(canvas, "DRIVER: " + t.optString("driver") + "    VEHICLE: " + t.optString("vehicle") + "    PROGRAM: " + t.optString("department"), y)
+            line(canvas, "START DATE/OD: " + t.optString("startDate") + " / " + t.optString("startOdometer"), y + 17)
+            line(canvas, "END DATE/OD: " + t.optString("endDate", "OPEN") + " / " + t.optString("endOdometer", "OPEN"), y + 34)
+            line(canvas, "DESTINATION: " + t.optString("destination"), y + 51)
+            line(canvas, "PURPOSE OF TRIP: " + t.optString("purpose"), y + 68)
+            canvas.drawLine(35f, y + 77, 575f, y + 77, paint)
+            y += 100f
+        }
+        if (receipts.length() > 0) {
+            val r = receipts.getJSONObject(receipts.length() - 1)
+            if (y > 705f) { doc.finishPage(page); page = newPage(); canvas = page.canvas; y = 50f }
+            line(canvas, "ODOMETER READING AT FUELING: " + r.optString("odometer"), y + 10)
+            line(canvas, "TOTAL GALLONS: " + r.optString("gallons") + "    TOTAL COSTS: $" + r.optString("cost"), y + 30)
+        }
+        doc.finishPage(page)
+        for (i in 0 until receipts.length()) {
+            val r = receipts.getJSONObject(i)
+            try {
+                val bitmap = contentResolver.openInputStream(Uri.parse(r.getString("image"))).use { BitmapFactory.decodeStream(it) } ?: continue
+                val receiptPage = newPage()
+                line(receiptPage.canvas, "ORIGINAL RECEIPT IMAGE " + (i + 1) + " - " + r.optString("date"), 36f, 13f)
+                val scale = minOf(540f / bitmap.width, 715f / bitmap.height)
+                receiptPage.canvas.drawBitmap(bitmap, null,
+                    android.graphics.RectF(35f, 55f, 35f + bitmap.width * scale, 55f + bitmap.height * scale), paint)
+                doc.finishPage(receiptPage)
+                bitmap.recycle()
+            } catch (_: Exception) {}
+        }
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "Vehicle_Usage_" + System.currentTimeMillis() + ".pdf")
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                if (Build.VERSION.SDK_INT >= 29) put(MediaStore.Downloads.RELATIVE_PATH, "Download/GasReceiptTracker")
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Cannot create PDF")
+            contentResolver.openOutputStream(uri).use { output ->
+                if (output == null) throw IllegalStateException("Cannot write PDF")
+                doc.writeTo(output)
+            }
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND)
+                .setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share vehicle usage PDF"))
+        } catch (e: Exception) { alert("PDF export failed: " + e.message) }
+        finally { doc.close() }
     }
 }
