@@ -49,7 +49,7 @@ class MainActivity : Activity() {
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
         label("Gas Receipt Tracker - v1.6", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
-        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign")) {
+        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign", "Backup" to "backup")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
             b.setOnClickListener { show(dest) }
         }
@@ -57,7 +57,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
     private fun show(where: String) {
-        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); "sign" -> signatureScreen(); else -> trips() }
+        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); "sign" -> signatureScreen(); "backup" -> backupScreen(); else -> trips() }
     }
     private fun trips() {
         draw("Vehicle usage / Trips")
@@ -209,6 +209,16 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == 207) {
+            try { TrackerBackup.restore(this, requireNotNull(data?.data)); show("home"); alert("Backup restored") }
+            catch (e: Exception) { alert("Restore failed: " + e.message) }
+            return
+        }
+        if (requestCode == 206) {
+            try { TrackerBackup.export(this, requireNotNull(data?.data)); alert("Backup saved") }
+            catch (e: Exception) { alert("Backup failed: " + e.message) }
+            return
+        }
         if (requestCode == 205) {
             val selected = data?.data ?: return
             try {
@@ -366,6 +376,25 @@ class MainActivity : Activity() {
             sendPacket(uri, receipts)
         } catch (e: Exception) { alert("PDF export failed: " + e.message) }
         finally { doc.close() }
+    }
+    private fun backupScreen() {
+        draw("Backup and restore")
+        label("Export all trip records, fuel receipts, signature and email templates to one ZIP file. Save it somewhere safe before changing phones.")
+        action("Save complete backup") {
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .setType("application/zip").addCategory(Intent.CATEGORY_OPENABLE)
+                .putExtra(Intent.EXTRA_TITLE, "GasReceiptTracker_Backup.zip"), 206)
+        }
+        action("Restore saved backup") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Restore backup?")
+                .setMessage("This replaces current saved trip and receipt records. Export a backup first if you want to keep them.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue") { _, _ ->
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 207)
+                }.show()
+        }
     }
     private fun signatureScreen() {
         draw("Purchase requisition signature")
