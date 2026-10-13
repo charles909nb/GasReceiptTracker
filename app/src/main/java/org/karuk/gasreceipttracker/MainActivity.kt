@@ -245,7 +245,7 @@ class MainActivity : Activity() {
                 alert("Attach receipt and enter odometer, gallons, and total cost"); return@action
             }
             receipts.put(JSONObject().put("station", station.text.toString()).put("date", date.text.toString())
-                .put("vehicle", vehicle.selectedItem?.toString().orEmpty()).put("odometer", odometer.text.toString())
+                .put("vehicle", vehicle.text.toString()).put("odometer", odometer.text.toString())
                 .put("gallons", gallons.text.toString()).put("price", price.text.toString())
                 .put("cost", cost.text.toString()).put("image", selected))
             store("receipts", receipts); prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").remove("draftOdometer").commit()
