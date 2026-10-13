@@ -58,17 +58,57 @@ class MainActivity : Activity() {
         val navScroll = HorizontalScrollView(this); navScroll.isHorizontalScrollBarEnabled = false
         navScroll.addView(nav); body.addView(navScroll); label(title, 22f)
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (!prefs.getBoolean("setupDone", false)) setupScreen() else show("home")
+    }
+    private fun vehiclePicker(selected: String): Spinner {
+        val vehicles = pref("vehicles").split(",").map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val choices = (vehicles + selected).filter { it.isNotBlank() }.distinct()
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
+            if (choices.isEmpty()) listOf("Set up vehicles first") else choices)
+        if (selected in choices) spinner.setSelection(choices.indexOf(selected))
+        body.addView(spinner)
+        return spinner
+    }
+    private fun setupScreen() {
+        draw("First-time setup")
+        label("Set up once. You can change these details later. Optional fields may be left blank.")
+        val name = edit("Your name", pref("driver"))
+        val department = edit("Department / program", pref("department"))
+        val email = edit("Your email address (optional)", pref("myEmail"))
+        val card = edit("Credit card last four digits (optional)", pref("cardLast4"))
+        val vehicles = edit("Vehicle numbers separated by commas (e.g. 309, 310)", pref("vehicles"))
+        val recipient = edit("Default recipient email (optional)", pref("emailTo"))
+        val ccSelf = CheckBox(this).apply { text = "CC my email on every reimbursement"; isChecked = true }
+        body.addView(ccSelf)
+        action("Save setup and start") {
+            if (name.text.isBlank()) { name.error = "Enter your name"; return@action }
+            val numbers = vehicles.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() }.distinct()
+            prefs.edit().putString("driver", name.text.toString().trim())
+                .putString("department", department.text.toString().trim())
+                .putString("myEmail", email.text.toString().trim())
+                .putString("cardLast4", card.text.toString().trim())
+                .putString("vehicles", numbers.joinToString(","))
+                .putString("vehicle", numbers.firstOrNull().orEmpty())
+                .putString("emailTo", recipient.text.toString().trim())
+                .putBoolean("ccSelf", ccSelf.isChecked)
+                .putBoolean("setupDone", true).commit()
+            show("home")
+        }
+    }
     private fun show(where: String) {
-        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); "sign" -> signatureScreen(); "backup" -> backupScreen(); else -> trips() }
+        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); "sign" -> signatureScreen(); "backup" -> backupScreen(); "setup" -> setupScreen(); else -> trips() }
     }
     private fun trips() {
         draw("Vehicle usage / Trips")
         val driver = edit("Driver's name", pref("driver"))
-        val vehicle = edit("Vehicle number", pref("vehicle"))
+        val vehicle = vehiclePicker(pref("vehicle"))
         val dept = edit("Department / program", pref("department"))
+        action("Edit my profile and vehicle list") { setupScreen() }
         action("Save driver and vehicle") {
-            prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.text.toString())
+            prefs.edit().putString("driver", driver.text.toString()).putString("vehicle", vehicle.selectedItem?.toString().orEmpty())
                 .putString("department", dept.text.toString()).commit()
             alert("Driver and vehicle saved")
         }
@@ -462,6 +502,10 @@ class MainActivity : Activity() {
         draw("Email templates")
         label("Save reusable recipient, subject, and body. Change them at any time. The app opens your email application for final review and sending.")
         val recipient = edit("Recipient email", pref("emailTo"))
+        val myEmail = edit("My email (for CC)", pref("myEmail"))
+        val ccOthers = edit("Additional CC emails, separated by commas", pref("emailCc"))
+        val ccSelf = CheckBox(this).apply { text = "CC myself on every email"; isChecked = prefs.getBoolean("ccSelf", true) }
+        body.addView(ccSelf)
         val card = edit("Credit card last 4 digits", pref("cardLast4"))
         val subject = edit("Subject template", prefs.getString("emailSubject", "Gas Receipt {date} - Pay Credit Card {cardLast4}") ?: "")
         label("Email body template (editable):")
@@ -475,6 +519,9 @@ class MainActivity : Activity() {
         action("Save email template") {
             prefs.edit().putString("emailTo", recipient.text.toString().trim())
                 .putString("cardLast4", card.text.toString().trim())
+                .putString("myEmail", myEmail.text.toString().trim())
+                .putString("emailCc", ccOthers.text.toString().trim())
+                .putBoolean("ccSelf", ccSelf.isChecked)
                 .putString("emailSubject", subject.text.toString())
                 .putString("emailBody", message.text.toString()).commit()
             alert("Email settings saved")
@@ -494,9 +541,11 @@ class MainActivity : Activity() {
         val message = renderTemplate(prefs.getString("emailBody",
             "Please find attached the vehicle usage and fuel receipt PDF for vehicle {vehicle}. Amount: \\u0024{amount}. Gallons: {gallons}.") ?: "", receipt)
         val to = pref("emailTo")
+        val cc = (pref("emailCc").split(",") + if (prefs.getBoolean("ccSelf", true)) listOf(pref("myEmail")) else emptyList()).map { it.trim() }.filter { it.isNotBlank() }.distinct()
         val email = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
-            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            if (to.isNotBlank()) putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            if (cc.isNotEmpty()) putExtra(Intent.EXTRA_CC, cc.toTypedArray())
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, message)
             putExtra(Intent.EXTRA_STREAM, uri)
