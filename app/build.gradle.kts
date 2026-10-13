@@ -9,8 +9,16 @@ android {
         applicationId = "org.karuk.gasreceipttracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
+    }
+    buildTypes {
+        getByName("debug") {
+            // Side-by-side test install avoids signature mismatch with older debug APKs.
+            // Keep production applicationId unchanged for future signed releases.
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
