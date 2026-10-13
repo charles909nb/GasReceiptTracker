@@ -116,7 +116,7 @@ class MainActivity : Activity() {
         val station = edit("Gas station", pref("ocr_station"))
         val date = edit("Fuel date and time", pref("ocr_date").ifBlank { now })
         val vehicle = edit("Vehicle number", pref("vehicle"))
-        val odometer = edit("Odometer at fueling", number = true)
+        val odometer = edit("Odometer at fueling", pref("draftOdometer"), number = true)
         val gallons = edit("Total gallons", pref("ocr_gallons"), number = true)
         val price = edit("Price per gallon", pref("ocr_price"), number = true)
         val cost = edit("Total cost", pref("ocr_total"), number = true)
@@ -169,6 +169,15 @@ class MainActivity : Activity() {
                 alert("Receipt scanned. Check and correct the values before saving.")
             }
         }
+        action("Save fuel draft") {
+            prefs.edit().putString("ocr_station", station.text.toString())
+                .putString("ocr_date", date.text.toString())
+                .putString("ocr_gallons", gallons.text.toString())
+                .putString("ocr_price", price.text.toString())
+                .putString("ocr_total", cost.text.toString())
+                .putString("draftOdometer", odometer.text.toString()).commit()
+            alert("Fuel draft saved on this phone")
+        }
         action("Save fuel receipt") {
             val selected = pref("pending_receipt")
             if (selected.isBlank() || (odometer.text.toString().toDoubleOrNull() ?: -1.0) < 0.0 ||
@@ -180,7 +189,7 @@ class MainActivity : Activity() {
                 .put("vehicle", vehicle.text.toString()).put("odometer", odometer.text.toString())
                 .put("gallons", gallons.text.toString()).put("price", price.text.toString())
                 .put("cost", cost.text.toString()).put("image", selected))
-            store("receipts", receipts); prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").commit()
+            store("receipts", receipts); prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").remove("draftOdometer").commit()
             alert("Fuel receipt saved"); show("fuel")
         }
         label("Saved receipts (" + receipts.length() + ")", 20f)
