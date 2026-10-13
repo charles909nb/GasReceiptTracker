@@ -43,9 +43,9 @@ class MainActivity : Activity() {
     private fun draw(title: String) {
         val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
-        label("Gas Receipt Tracker - v1.2", 23f)
+        label("Gas Receipt Tracker - v1.3", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
-        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets")) {
+        for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
             b.setOnClickListener { show(dest) }
         }
@@ -53,7 +53,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); show("home") }
     private fun show(where: String) {
-        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); else -> trips() }
+        when(where) { "fuel" -> fuel(); "sheets" -> sheets(); "email" -> emailSettings(); else -> trips() }
     }
     private fun trips() {
         draw("Vehicle usage / Trips")
@@ -185,7 +185,7 @@ class MainActivity : Activity() {
                 "\n" + t.optString("destination") + " - " + t.optString("purpose") +
                 "\n" + t.optString("startOdometer") + " to " + t.optString("endOdometer", "OPEN"))
         }
-        action("Create and share usage PDF") { exportPdf(entries, receipts) }
+        action("Create and email usage PDF") { exportPdf(entries, receipts) }
         label("The PDF contains typed vehicle usage and receipt images. Official Excel purchase requisition export is not yet included.")
         action("Archive current sheet and start a new one") {
             var open = false
@@ -260,10 +260,72 @@ class MainActivity : Activity() {
                 if (output == null) throw IllegalStateException("Cannot write PDF")
                 doc.writeTo(output)
             }
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND)
-                .setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share vehicle usage PDF"))
+            sendPacket(uri, receipts)
         } catch (e: Exception) { alert("PDF export failed: " + e.message) }
         finally { doc.close() }
     }
+    private fun renderTemplate(template: String, receipt: JSONObject): String {
+        val values = mapOf(
+            "{date}" to receipt.optString("date"),
+            "{vehicle}" to receipt.optString("vehicle", pref("vehicle")),
+            "{driver}" to pref("driver"),
+            "{program}" to pref("department"),
+            "{station}" to receipt.optString("station"),
+            "{amount}" to receipt.optString("cost"),
+            "{gallons}" to receipt.optString("gallons"),
+            "{pricePerGallon}" to receipt.optString("price"),
+            "{odometer}" to receipt.optString("odometer"),
+            "{cardLast4}" to pref("cardLast4")
+        )
+        var result = template
+        for ((key, value) in values) result = result.replace(key, value)
+        return result
+    }
+    private fun emailSettings() {
+        draw("Email templates")
+        label("Save reusable recipient, subject, and body. Change them at any time. The app opens your email application for final review and sending.")
+        val recipient = edit("Recipient email", pref("emailTo"))
+        val card = edit("Credit card last 4 digits", pref("cardLast4"))
+        val subject = edit("Subject template", prefs.getString("emailSubject", "Gas Receipt {date} - Pay Credit Card {cardLast4}") ?: "")
+        label("Email body template (editable):")
+        val message = EditText(this)
+        message.minLines = 5
+        message.setSingleLine(false)
+        message.setText(prefs.getString("emailBody",
+            "Please find attached the fuel reimbursement packet for vehicle {vehicle}.\\nAmount: \\u0024{amount}\\nGallons: {gallons}\\nStation: {station}\\nDate: {date}\\nDriver: {driver}\\nProgram: {program}"))
+        body.addView(message)
+        label("Available fields: {date}, {vehicle}, {driver}, {program}, {station}, {amount}, {gallons}, {pricePerGallon}, {odometer}, {cardLast4}", 14f)
+        action("Save email template") {
+            prefs.edit().putString("emailTo", recipient.text.toString().trim())
+                .putString("cardLast4", card.text.toString().trim())
+                .putString("emailSubject", subject.text.toString())
+                .putString("emailBody", message.text.toString()).commit()
+            alert("Email settings saved")
+        }
+        action("Preview with latest fuel receipt") {
+            val receipts = data("receipts")
+            if (receipts.length() == 0) { alert("Save a receipt first"); return@action }
+            val receipt = receipts.getJSONObject(receipts.length() - 1)
+            label("Subject: " + renderTemplate(subject.text.toString(), receipt) +
+                "\\n\\n" + renderTemplate(message.text.toString(), receipt), 15f)
+        }
+    }
+    private fun sendPacket(uri: Uri, receipts: JSONArray) {
+        val receipt = if (receipts.length() > 0) receipts.getJSONObject(receipts.length() - 1) else JSONObject()
+        val subject = renderTemplate(prefs.getString("emailSubject",
+            "Gas Receipt {date} - Pay Credit Card {cardLast4}") ?: "", receipt)
+        val message = renderTemplate(prefs.getString("emailBody",
+            "Please find attached the vehicle usage and fuel receipt PDF for vehicle {vehicle}. Amount: \\u0024{amount}. Gallons: {gallons}.") ?: "", receipt)
+        val to = pref("emailTo")
+        val email = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, message)
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(email, "Email reimbursement PDF"))
+    }
+
 }
