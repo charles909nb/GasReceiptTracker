@@ -61,7 +61,27 @@ object TrackerBackup {
         // Signature location must be reconstructed for the destination phone.
         if (File(context.filesDir, "reimbursement_signature.png").exists())
             edit.putString("signatureFile", File(context.filesDir, "reimbursement_signature.png").absolutePath)
-        for (key in keys) if (key != "signatureFile" && restored.has(key)) edit.putString(key, restored.optString(key))
+        fun relink(receipts: JSONArray): JSONArray {
+            for (i in 0 until receipts.length()) {
+                val receipt = receipts.optJSONObject(i) ?: continue
+                val old = Uri.parse(receipt.optString("image"))
+                val name = old.lastPathSegment.orEmpty()
+                if (safeName(name) && File(context.filesDir, name).exists())
+                    receipt.put("image", Uri.fromFile(File(context.filesDir, name)).toString())
+            }
+            return receipts
+        }
+        for (key in keys) if (key != "signatureFile" && restored.has(key)) {
+            val value = if (key == "receipts") relink(JSONArray(restored.optString(key, "[]"))).toString()
+                else if (key == "archives") {
+                    val archives = JSONArray(restored.optString(key, "[]"))
+                    for (i in 0 until archives.length()) archives.optJSONObject(i)?.let { archive ->
+                        archive.put("receipts", relink(archive.optJSONArray("receipts") ?: JSONArray()))
+                    }
+                    archives.toString()
+                } else restored.optString(key)
+            edit.putString(key, value)
+        }
         edit.commit()
     }
 }
