@@ -47,7 +47,7 @@ class MainActivity : Activity() {
     private fun draw(title: String) {
         val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
-        label("Gas Receipt Tracker - v1.5", 23f)
+        label("Gas Receipt Tracker - v1.6", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
         for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
@@ -199,6 +199,15 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == 205) {
+            val selected = data?.data ?: return
+            try {
+                ReimbursementPacket.importOfficialPdf(this, selected)
+                alert("Official requisition PDF imported")
+            } catch (e: Exception) { alert("PDF import failed: " + e.message) }
+            show("sheets")
+            return
+        }
         if (requestCode == 204) {
             val chosen = data?.data ?: return
             try {
@@ -257,6 +266,19 @@ class MainActivity : Activity() {
                 }
                 startActivity(Intent.createChooser(intent, "Share original signed Excel requisition"))
             } catch (e: Exception) { alert("Excel export failed: " + e.message) }
+        }
+        action("Import official Karuk Purchase Requisition PDF") {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE), 205)
+        }
+        label(if (ReimbursementPacket.hasTemplate(this))
+            "Official requisition PDF is available" else "Official requisition PDF not imported")
+        action("Generate and email complete reimbursement packet") {
+            try {
+                val pdf = ReimbursementPacket.create(this, entries, receipts,
+                    pref("driver"), pref("cardLast4"), pref("signatureFile"))
+                sendPacket(pdf, receipts)
+            } catch (e: Exception) { alert("Packet creation failed: " + e.message) }
         }
         action("Create and email usage PDF") { exportPdf(entries, receipts) }
         label("PDF currently includes receipt images and the five-trip Vehicle Usage Sheet. The original signed Purchase Requisition is still being integrated.")
