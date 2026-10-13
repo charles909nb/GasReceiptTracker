@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -51,7 +52,7 @@ object ReimbursementPacket {
                         renderer.openPage(i).use { original ->
                             val width = 612
                             val height = (original.height.toFloat() * width / original.width).toInt()
-                            val bitmap = Bitmap.createBitmap(width * 2, height * 2, Bitmap.Config.ARGB_8888)
+                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                             bitmap.eraseColor(Color.WHITE)
                             original.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
                             val page = doc.startPage(PdfDocument.PageInfo.Builder(width, height, ++pageNumber).create())
@@ -81,9 +82,21 @@ object ReimbursementPacket {
             for (i in 0 until receipts.length()) {
                 val r = receipts.getJSONObject(i)
                 val imageUri = Uri.parse(r.getString("image"))
-                val image = if (imageUri.scheme == "file") BitmapFactory.decodeFile(imageUri.path) else
-                    context.contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it) }
-                    ?: throw IllegalStateException("Receipt image " + (i + 1) + " is unavailable")
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (imageUri.scheme == "file") {
+                    BitmapFactory.decodeFile(imageUri.path, options)
+                } else {
+                    context.contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it, null, options) }
+                }
+                var sample = 1
+                while (options.outWidth / sample > 1800 || options.outHeight / sample > 2400) sample *= 2
+                options.inJustDecodeBounds = false
+                options.inSampleSize = sample
+                val image = (if (imageUri.scheme == "file") {
+                    BitmapFactory.decodeFile(imageUri.path, options)
+                } else {
+                    context.contentResolver.openInputStream(imageUri).use { BitmapFactory.decodeStream(it, null, options) }
+                }) ?: throw IllegalStateException("Receipt image " + (i + 1) + " is unavailable")
                 val page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, ++pageNumber).create())
                 val canvas = page.canvas
                 paint.textSize = 12f
