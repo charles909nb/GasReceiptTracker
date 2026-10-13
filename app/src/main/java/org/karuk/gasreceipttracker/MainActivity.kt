@@ -16,6 +16,8 @@ import android.net.Uri
 import android.os.Build
 import android.widget.*
 import android.text.InputType
+import android.text.TextWatcher
+import android.text.Editable
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -110,6 +112,15 @@ class MainActivity : Activity() {
         action("Record fuel purchase") { show("fuel") }
         action("Preview / export vehicle usage sheet") { show("sheets") }
     }
+    private fun autoSaveField(field: EditText, key: String) {
+        field.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                prefs.edit().putString(key, s?.toString().orEmpty()).apply()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
     private fun fuel() {
         draw("Fuel receipts")
         val receipts = data("receipts")
@@ -121,6 +132,13 @@ class MainActivity : Activity() {
         val gallons = edit("Total gallons", pref("ocr_gallons"), number = true)
         val price = edit("Price per gallon", pref("ocr_price"), number = true)
         val cost = edit("Total cost", pref("ocr_total"), number = true)
+        autoSaveField(station, "ocr_station")
+        autoSaveField(date, "ocr_date")
+        autoSaveField(odometer, "draftOdometer")
+        autoSaveField(gallons, "ocr_gallons")
+        autoSaveField(price, "ocr_price")
+        autoSaveField(cost, "ocr_total")
+        label("Entries are saved automatically as you type.", 14f)
         label(if (pref("pending_receipt").isBlank()) "No receipt image attached" else "Receipt image attached")
         label("Receipt scanning suggests values. Check each value against the image before saving.", 14f)
         action("Scan and crop receipt automatically") {
