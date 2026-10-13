@@ -230,7 +230,7 @@ class MainActivity : Activity() {
                 "\n" + t.optString("startOdometer") + " to " + t.optString("endOdometer", "OPEN"))
         }
         action("Create and email usage PDF") { exportPdf(entries, receipts) }
-        label("The PDF contains typed vehicle usage and receipt images. Official Excel purchase requisition export is not yet included.")
+        label("PDF currently includes receipt images and the five-trip Vehicle Usage Sheet. The original signed Purchase Requisition is still being integrated.")
         action("Archive current sheet and start a new one") {
             var open = false
             for (i in 0 until entries.length()) if (!entries.getJSONObject(i).has("endOdometer")) open = true
@@ -256,29 +256,6 @@ class MainActivity : Activity() {
             paint.textSize = size
             canvas.drawText(value.take(95), 35f, y, paint)
         }
-        var page = newPage()
-        var canvas = page.canvas
-        line(canvas, "VEHICLE USAGE SHEET", 45f, 20f)
-        line(canvas, "Driver: " + pref("driver") + "   Vehicle #: " + pref("vehicle") + "   Department: " + pref("department"), 76f)
-        var y = 105f
-        for (i in 0 until entries.length()) {
-            if (y > 665f) { doc.finishPage(page); page = newPage(); canvas = page.canvas; y = 45f }
-            val t = entries.getJSONObject(i)
-            line(canvas, "DRIVER: " + t.optString("driver") + "    VEHICLE: " + t.optString("vehicle") + "    PROGRAM: " + t.optString("department"), y)
-            line(canvas, "START DATE/OD: " + t.optString("startDate") + " / " + t.optString("startOdometer"), y + 17)
-            line(canvas, "END DATE/OD: " + t.optString("endDate", "OPEN") + " / " + t.optString("endOdometer", "OPEN"), y + 34)
-            line(canvas, "DESTINATION: " + t.optString("destination"), y + 51)
-            line(canvas, "PURPOSE OF TRIP: " + t.optString("purpose"), y + 68)
-            canvas.drawLine(35f, y + 77, 575f, y + 77, paint)
-            y += 100f
-        }
-        if (receipts.length() > 0) {
-            val r = receipts.getJSONObject(receipts.length() - 1)
-            if (y > 705f) { doc.finishPage(page); page = newPage(); canvas = page.canvas; y = 50f }
-            line(canvas, "ODOMETER READING AT FUELING: " + r.optString("odometer"), y + 10)
-            line(canvas, "TOTAL GALLONS: " + r.optString("gallons") + "    TOTAL COSTS: $" + r.optString("cost"), y + 30)
-        }
-        doc.finishPage(page)
         for (i in 0 until receipts.length()) {
             val r = receipts.getJSONObject(i)
             try {
@@ -297,6 +274,7 @@ class MainActivity : Activity() {
                 bitmap.recycle()
             } catch (_: Exception) {}
         }
+        VehicleUsagePdf.append(doc, entries, receipts, pageNo + 1)
         try {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, "Vehicle_Usage_" + System.currentTimeMillis() + ".pdf")
