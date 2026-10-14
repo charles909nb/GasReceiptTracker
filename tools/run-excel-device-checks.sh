@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Gradle produces the JUnit reports and uninstalls its test application during teardown.
+# Gradle produces JUnit reports and uninstalls the test app during teardown.
 gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
-# Run once more without Gradle teardown so generated documents can be visually reviewed.
+# Run again without teardown to collect real document and interface screenshots.
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r org.karuk.gasreceipttracker.preview.test/androidx.test.runner.AndroidJUnitRunner | tee verification-instrumentation.txt
-grep -q 'OK (4 tests)' verification-instrumentation.txt
+grep -q 'OK (16 tests)' verification-instrumentation.txt
 adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
+test -s verification/UI_Home.png
+test -s verification/UI_Signed_Pdf.png
 test -s verification/Sample_Gas_Requisition.xls
 test -s verification/Sample_Gas_Requisition.pdf
 test -s verification/In_App_PDF_Preview.png
