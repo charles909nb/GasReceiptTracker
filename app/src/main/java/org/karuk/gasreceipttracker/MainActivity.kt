@@ -486,6 +486,10 @@ class MainActivity : Activity() {
             when(operation){
                 "requisition","excel"->{
                     val prepared=OfficialPurchaseRequisition.prepare(this,receipts.getJSONObject(0),driver,card,signature)
+                    TrackerDatabase(this).use {
+                        it.recordDocument(req.getString("id"), "gas_excel", OfficialPurchaseRequisition.uri(this,prepared.excel).toString())
+                        it.recordDocument(req.getString("id"), "gas_pdf", OfficialPurchaseRequisition.uri(this,prepared.pdf).toString())
+                    }
                     if(operation=="excel"){
                         prefs.edit().putString("pendingExcelExport",prepared.excel.absolutePath).commit()
                         runOnUiThread{startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/vnd.ms-excel").addCategory(Intent.CATEGORY_OPENABLE)
@@ -494,6 +498,7 @@ class MainActivity : Activity() {
                 }
                 "packet","email"->{
                     val uri=ReimbursementPacket.create(this,entries,receipts,driver,card,signature.absolutePath)
+                    TrackerDatabase(this).use { it.recordDocument(req.getString("id"), "reimbursement_pdf", uri.toString()) }
                     runOnUiThread{if(operation=="email")prepareEmail(uri,receipts)else previewPdf(uri,true)}
                 }
             }
