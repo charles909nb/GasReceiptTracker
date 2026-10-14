@@ -21,7 +21,7 @@ class OriginalGasFormTest {
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=instrumentation.targetContext
     private fun receipt()=JSONObject().put("date","10/8/2026").put("station","SAMPLE STATION")
-        .put("vehicle","309").put("odometer","9750").put("gallons","8.765").put("price","6.999").put("cost","61.35")
+        .put("vehicle","309").put("odometer","9750").put("gallons","8.765").put("price","6.9993").put("cost","61.35")
     private fun signature():File{
         val bitmap=Bitmap.createBitmap(600,180,Bitmap.Config.ARGB_8888)
         val c=Canvas(bitmap);c.drawColor(Color.WHITE)
@@ -57,7 +57,7 @@ class OriginalGasFormTest {
             assertEquals("pay CC 1234",s.getRow(13).getCell(2).stringCellValue)
             assertEquals(8.765,s.getRow(18).getCell(1).numericCellValue,.000001)
             assertEquals("Gas car 309",s.getRow(18).getCell(3).stringCellValue)
-            assertEquals(6.999,s.getRow(18).getCell(10).numericCellValue,.000001)
+            assertEquals(6.9993,s.getRow(18).getCell(10).numericCellValue,.000001)
             assertEquals(61.35,s.getRow(18).getCell(12).numericCellValue,.000001)
             assertEquals(CellType.FORMULA,s.getRow(39).getCell(8).cellType)
             assertEquals(61.35,s.getRow(39).getCell(8).numericCellValue,.000001)
