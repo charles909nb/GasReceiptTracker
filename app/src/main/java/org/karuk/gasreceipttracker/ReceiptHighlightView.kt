@@ -48,7 +48,18 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
         val selected=active.firstOrNull()
         if(selected!=null){
             val r=toScreen(selected)
-            val label=activeField.replaceFirstChar{it.uppercaseChar()}
+            val label=when(activeField){
+                "cardLast4"->"Last four digits"
+                "cardType"->"Card type"
+                "fuelType"->"Fuel type"
+                "price"->"Price/gal"
+                "total"->"Fuel total"
+                "gallons"->"Gallons"
+                "station"->"Station"
+                "date"->"Receipt date"
+                "time"->"Receipt time"
+                else->activeField
+            }
             paint.typeface=android.graphics.Typeface.DEFAULT_BOLD
             paint.textSize=12*density
             val tWidth=paint.measureText(label)
