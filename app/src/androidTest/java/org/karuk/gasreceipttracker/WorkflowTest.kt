@@ -55,8 +55,8 @@ class WorkflowTest {
         c.drawText("TEST SIGNATURE",10f,65f,Paint().apply{color=Color.BLACK;textSize=36f})
         file.outputStream().use{b.compress(Bitmap.CompressFormat.PNG,100,it)};b.recycle();return w.saveSignature(file)
     }
-    @Before fun reset(){prefs.edit().clear().commit()}
-    @After fun finish(){activity?.let{ins.runOnMainSync{it.finish()}};activity=null;ins.waitForIdleSync();prefs.edit().clear().commit()}
+    @Before fun reset(){prefs.edit().clear().commit();ctx.deleteDatabase("fuel_records.db") }
+    @After fun finish(){activity?.let{ins.runOnMainSync{it.finish()}};activity=null;ins.waitForIdleSync();prefs.edit().clear().commit();ctx.deleteDatabase("fuel_records.db")}
     @Test fun migrationKeepsExistingTripsReceiptAndProfile(){
         seed();val w=RequestWorkflow(ctx);w.initialize()
         assertEquals(1,w.all().length());assertEquals("PR-00001",w.current().getString("reference"))
