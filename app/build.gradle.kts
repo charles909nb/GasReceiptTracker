@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.9-workflow"
+        versionCode = 11
+        versionName = "2.0-receipts"
     }
     buildTypes {
         getByName("debug") {
