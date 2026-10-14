@@ -363,6 +363,7 @@ class MainActivity : Activity() {
         for(i in receipts.length()-1 downTo 0){
             val r=receipts.getJSONObject(i)
             label(r.optString("date")+" - "+r.optString("station")+"\n"+r.optString("gallons")+" gallons, $"+r.optString("cost")+", Vehicle "+r.optString("vehicle"))
+            action("Review receipt highlights "+(i+1)){checkReceipt(r)}
             action("View receipt "+(i+1)){
                 try{
                     val stored=Uri.parse(r.getString("image"))
@@ -671,6 +672,9 @@ class MainActivity : Activity() {
                         results.addView(TrackerStyle.card(this,
                             r.station.ifBlank{"Fuel receipt"}+"  /  $"+r.total,
                             r.date+"  |  Vehicle "+r.vehicle+"  |  "+r.gallons+" gal\n"+r.reference+"  /  "+r.requestTitle))
+                        results.addView(TrackerStyle.button(this,"View highlighted receipt and card verification") {
+                            checkReceipt(r.payload)
+                        })
                         results.addView(TrackerStyle.button(this,"Review saved receipt") {
                             android.app.AlertDialog.Builder(this).setTitle(r.station+" - "+r.date)
                                 .setMessage("Request: "+r.reference+"\nVehicle: "+r.vehicle+
