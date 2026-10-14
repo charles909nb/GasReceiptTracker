@@ -71,10 +71,9 @@ jobs:
           target: google_apis
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
           script: |
-            gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
+            status=0; gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest || status=$?; adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification || true; exit $status
       - name: Commit only verified worksheet integration to development branch
         if: success()
         shell: bash
