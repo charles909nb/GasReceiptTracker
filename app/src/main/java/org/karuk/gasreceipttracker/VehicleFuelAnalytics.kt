@@ -34,7 +34,8 @@ object VehicleFuelAnalytics {
     }
     fun points(fills:List<Fill>,vehicle:String):List<Point>{
         val ordered=fills.filter{it.vehicle==vehicle}.sortedWith(
-            compareBy<Fill>{it.odometer}.thenBy{FinancePacketArchive.dateMillis(it.date)})
+            compareBy<Fill>{FinancePacketArchive.dateMillis(it.date)}
+                .thenBy{it.odometer})
         val points=mutableListOf<Point>()
         var previous:Fill?=null
         for(current in ordered){
