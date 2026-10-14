@@ -48,7 +48,7 @@ class FinanceArchiveActivity:Activity(){
         body.addView(note("Find by PR date, purchase date, amount, PR reference, vehicle, station, recipient or status."))
         body.addView(TrackerStyle.text(this,"Search",13f,true))
         search=EditText(this).apply{
-            hint="Example: 2026-10-07, 61.35, PR-00001, 309"
+            hint="Combine terms: 2026-10-07 61.35 (date + amount)"
             setSingleLine(true)
         }
         TrackerStyle.input(this,search);body.addView(search)
