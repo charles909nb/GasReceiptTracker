@@ -10,13 +10,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.8-excel"
+        versionCode = 10
+        versionName = "1.9-workflow"
     }
     buildTypes {
         getByName("debug") {
-            // Side-by-side test install avoids signature mismatch with older debug APKs.
-            // Keep production applicationId unchanged for future signed releases.
+            // Keep the existing preview identity and storage area.
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
         }
