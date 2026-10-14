@@ -10,7 +10,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
+        versionCode = providers.environmentVariable("GRT_VERSION_CODE").orNull?.toIntOrNull() ?: 11
         versionName = "1.10-updateable"
     }
     signingConfigs {
