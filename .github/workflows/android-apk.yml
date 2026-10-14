@@ -2,6 +2,8 @@ name: Build Gas Receipt Tracker APK
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,10 +23,49 @@ jobs:
         run: |
           mkdir -p app/src/main/res/drawable
           base64 -d app/icon-approved.b64 > app/src/main/res/drawable/approved_app_icon.png
-      - name: Build APK
-        run: gradle --no-daemon :app:assembleDebug
-      - uses: actions/upload-artifact@v4
+      - name: Check stable signing credentials and version
+        env:
+          GRT_SIGNING_KEYSTORE_B64: ${{ secrets.GRT_SIGNING_KEYSTORE_B64 }}
+          GRT_SIGNING_STORE_PASSWORD: ${{ secrets.GRT_SIGNING_STORE_PASSWORD }}
+          GRT_SIGNING_KEY_ALIAS: ${{ secrets.GRT_SIGNING_KEY_ALIAS }}
+          GRT_SIGNING_KEY_PASSWORD: ${{ secrets.GRT_SIGNING_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          echo "GRT_VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/signing"
+          if [[ -n "$GRT_SIGNING_KEYSTORE_B64" && -n "$GRT_SIGNING_STORE_PASSWORD" && -n "$GRT_SIGNING_KEY_ALIAS" && -n "$GRT_SIGNING_KEY_PASSWORD" ]]; then
+            printf '%s' "$GRT_SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/signing/release-keystore.jks"
+            echo "GRT_SIGNING_KEYSTORE=$RUNNER_TEMP/signing/release-keystore.jks" >> "$GITHUB_ENV"
+            echo "GRT_RELEASE_SIGNING_AVAILABLE=true" >> "$GITHUB_ENV"
+            echo "Signing key configured. A release APK will be produced."
+          else
+            echo "GRT_RELEASE_SIGNING_AVAILABLE=false" >> "$GITHUB_ENV"
+            echo "::warning::Stable release keystore is not configured. Only a non-upgradeable debug PREVIEW APK can be built."
+          fi
+      - name: Build upgradeable signed release APK
+        if: env.GRT_RELEASE_SIGNING_AVAILABLE == 'true' && github.event_name != 'pull_request'
+        env:
+          GRT_SIGNING_STORE_PASSWORD: ${{ secrets.GRT_SIGNING_STORE_PASSWORD }}
+          GRT_SIGNING_KEY_ALIAS: ${{ secrets.GRT_SIGNING_KEY_ALIAS }}
+          GRT_SIGNING_KEY_PASSWORD: ${{ secrets.GRT_SIGNING_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Upload signed install/update APK
+        if: env.GRT_RELEASE_SIGNING_AVAILABLE == 'true' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          name: GasReceiptTracker-V1.1-Test-APK
+          name: GasReceiptTracker-Signed-Update-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - name: Build non-upgradeable preview for checks
+        if: env.GRT_RELEASE_SIGNING_AVAILABLE != 'true' || github.event_name == 'pull_request'
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Upload preview APK (not for installed app updates)
+        if: env.GRT_RELEASE_SIGNING_AVAILABLE != 'true' || github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: GasReceiptTracker-PREVIEW-NOT-FOR-UPDATES
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Clear ephemeral signing material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"

@@ -30,8 +30,17 @@ object ReimbursementPacket {
         require(prepared.signed){"A signature is required for the final reimbursement packet"}
         val identity=prepared.excel.name+trips.toString()+receipts.toString()+"packet-v2"
         val key=MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString(""){"%02x".format(it)}.take(24)
-        val destination=File(context.filesDir,"exports/Karuk_Reimbursement_$key.pdf")
-        if(destination.isFile)return OfficialPurchaseRequisition.uri(context,destination)
+        val folder=File(context.filesDir,"exports").apply{mkdirs()}
+        // Human-readable attachment; a changed packet with the same date and
+        // vehicle gets a disambiguating suffix instead of overwriting history.
+        val name=PurchaseDocumentNames.fuelPdfName(receipt)
+        val base=name.removeSuffix(".pdf")
+        val canonical=File(folder,name)
+        val fingerprint=File(folder,".$base.sha256")
+        val destination=if(canonical.isFile && fingerprint.takeIf{it.isFile}?.readText()?.trim()!=key)
+            File(folder,"${base}_${key.take(8)}.pdf") else canonical
+        if(destination.isFile && (destination!=canonical || fingerprint.takeIf{it.isFile}?.readText()?.trim()==key))
+            return OfficialPurchaseRequisition.uri(context,destination)
         val part=File(destination.parentFile,destination.name+".part")
         try{
             val doc = PdfDocument()
@@ -55,6 +64,7 @@ object ReimbursementPacket {
                 FileOutputStream(part).use{doc.writeTo(it);it.fd.sync()}
             } finally { doc.close() }
             check(part.renameTo(destination)){"Could not save the reimbursement packet"}
+            if(destination==canonical)runCatching{fingerprint.writeText(key)}
             return OfficialPurchaseRequisition.uri(context,destination)
         }catch(e:Exception){part.delete();throw e}
     }

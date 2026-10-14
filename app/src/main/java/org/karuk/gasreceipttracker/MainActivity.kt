@@ -464,7 +464,7 @@ class MainActivity : Activity() {
                     if(operation=="excel"){
                         prefs.edit().putString("pendingExcelExport",prepared.excel.absolutePath).commit()
                         runOnUiThread{startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/vnd.ms-excel").addCategory(Intent.CATEGORY_OPENABLE)
-                            .putExtra(Intent.EXTRA_TITLE,req.getString("reference")+"_Karuk_Gas.xls"),208)}
+                            .putExtra(Intent.EXTRA_TITLE,PurchaseDocumentNames.fuelExcelName(receipts.getJSONObject(0))),208)}
                     }else runOnUiThread{previewPdf(OfficialPurchaseRequisition.uri(this,prepared.pdf),true)}
                 }
                 "packet","email"->{
