@@ -1,7 +1,7 @@
 name: Verify worksheet and request workflow on Android
 on:
   push:
-    branches: [main, excel-embedded-finish, workflow-ui-v1-9, receipt-date-history-v2, receipt-visual-review-v2-1]
+    branches: [main, excel-embedded-finish, workflow-ui-v1-9, receipt-date-history-v2, receipt-visual-review-v2-1, finance-archive-mileage-v2-2]
     paths: ['app/**', 'tools/run-excel-device-checks.sh', '.github/workflows/excel-verification.yml']
   pull_request:
     paths: ['app/**', 'tools/run-excel-device-checks.sh', '.github/workflows/excel-verification.yml']
@@ -39,7 +39,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify original forms, OCR highlights, card checks and next-request workflow on Android 15
+      - name: Verify Finance packet archive, MPG analytics and original app regressions on Android 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -53,7 +53,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GasReceiptTracker-2.1-Highlighted-Receipt-Review
+          name: GasReceiptTracker-2.2-Finance-Mileage
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/androidTests/
