@@ -48,7 +48,7 @@ object TrackerBackup {
                         val out=File(stage,name).apply{parentFile?.mkdirs()};var size=0L
                         out.outputStream().use{target->
                             var n=zip.read(buffer)
-                            while(n>=0){size+=n;total+=n;require(size<=50_000_000 && total<=250_000_000){"Backup exceeds safe restore size"}
+                            while(n>=0){size+=n;total+=n;require(size<=90_000_000 && total<=1_000_000_000){"Backup exceeds safe restore size"}
                                 target.write(buffer,0,n);n=zip.read(buffer)}
                         }
                     }
