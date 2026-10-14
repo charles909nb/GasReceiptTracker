@@ -158,6 +158,12 @@ class MainActivity : Activity() {
         if(workflow.pendingEmail()!=null)prefs.edit().putBoolean("requestEmailLeftApp",true).commit()
     }
     override fun onResume(){super.onResume();window.decorView.post{offerEmailConfirmation()}}
+    override fun onWindowFocusChanged(hasFocus:Boolean){
+        super.onWindowFocusChanged(hasFocus)
+        // Email apps can return focus without causing another onResume.
+        // Prompt only if a pending email exists; user must explicitly confirm Send.
+        if(hasFocus)window.decorView.post{offerEmailConfirmation()}
+    }
     private fun moreScreen(){
         draw("Settings & tools")
         body.addView(TrackerStyle.card(this,"Your workspace","Version 1.9  •  Original Karuk Gas worksheet included"))
