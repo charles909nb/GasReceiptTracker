@@ -137,6 +137,8 @@ object FinancePackets {
     /** INSERT OR IGNORE protects follow-up status and notes on every save/sync. */
     fun indexSent(db:SQLiteDatabase,context:Context,request:JSONObject){
         if(request.optString("status")!="sent")return
+        db.rawQuery("SELECT 1 FROM finance_packets WHERE request_id=?",
+            arrayOf(request.optString("id"))).use{if(it.moveToFirst())return}
         val receipt=request.optJSONArray("receipts")?.optJSONObject(0)?:JSONObject()
         val amount=cents(receipt.optString("cost"))?:0L
         val sent=request.optString("sentAt")
@@ -211,7 +213,7 @@ object FinancePackets {
             }
             found
         }
-    fun vehicles(context:Context):List<String>=TrackerDatabase(context).use{db->
+    fun vehicles(context:Context):List<String> =TrackerDatabase(context).use{db->
         val names=mutableListOf<String>()
         db.readableDatabase.rawQuery(
             "SELECT DISTINCT vehicle FROM finance_packets WHERE vehicle!='' ORDER BY vehicle COLLATE NOCASE",null
