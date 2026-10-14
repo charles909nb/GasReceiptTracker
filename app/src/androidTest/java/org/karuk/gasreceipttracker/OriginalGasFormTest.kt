@@ -93,6 +93,16 @@ class OriginalGasFormTest {
         try { OfficialPurchaseRequisition.prepare(context,receipt().put("gallons","-1"),"Sample","1234",signature());fail("Negative gallons accepted") }
         catch(expected:IllegalArgumentException) { assertTrue(expected.message!!.contains("gallon")) }
     }
+    @Test fun confirmedDifferentCardAppearsOnOriginalGasPurchaseRequisition(){
+        val actual=receipt().put("cardLast4","5678").put("cardType","Visa")
+            .put("cardVerificationStatus","MISMATCH_ACKNOWLEDGED")
+        val form=OfficialPurchaseRequisition.prepare(context,actual,"Sample Driver","1234",signature())
+        HSSFWorkbook(form.excel.inputStream()).use{w->
+            val sheet=w.getSheet("Gas")
+            assertEquals("pay CC 5678",sheet.getRow(13).getCell(2).stringCellValue)
+            assertEquals(61.35,sheet.getRow(39).getCell(8).numericCellValue,.000001)
+        }
+    }
     @Test fun threePagePacketAndInAppReviewNeedNoManualTemplateImport(){
         val r=receipt()
         val image=Bitmap.createBitmap(600,850,Bitmap.Config.ARGB_8888)
