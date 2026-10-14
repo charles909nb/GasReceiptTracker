@@ -8,10 +8,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GuidedArchiveSearchTest {
     private val rows=listOf(
-        ArchiveSearchRow("1","Oct 7, 2026",61.35,"309","PR-00021","Sent","Yreka trip"),
-        ArchiveSearchRow("2","Oct 9, 2026",62.75,"309","PR-00022","Sent","Happy Camp"),
-        ArchiveSearchRow("3","Oct 13, 2026",70.00,"410","PR-00023","Draft","Orleans"),
-        ArchiveSearchRow("4","Oct 25, 2026",81.50,"410","PR-00024","Archived","Service"))
+        ArchiveSearchRow("1","Oct 7, 2026",61.35,"309","PR-00021","Sent","Yreka trip","Chevron","Oct 8, 2026 10:10 AM"),
+        ArchiveSearchRow("2","Oct 9, 2026",62.75,"309","PR-00022","Sent","Happy Camp","Shell","Oct 10, 2026 9:20 AM"),
+        ArchiveSearchRow("3","Oct 13, 2026",70.00,"410","PR-00023","Draft","Orleans","Chevron",""),
+        ArchiveSearchRow("4","Oct 25, 2026",81.50,"410","PR-00024","Archived","Service","Chevron",""))
     private fun lookup(field:String,match:String,first:String,second:String="",sort:String="Newest purchase first") =
         GuidedArchiveSearch.results(rows,ArchiveSearchCriteria(field,match,first,second,sort))
 
@@ -69,6 +69,17 @@ class GuidedArchiveSearchTest {
     @Test fun highestAndLowestAmountSortingAreNumeric(){
         assertEquals("4",lookup("Purchase date","Any date","",sort="Amount: highest first").first().id)
         assertEquals("1",lookup("Purchase date","Any date","",sort="Amount: lowest first").first().id)
+    }
+    @Test fun previousStationSearchIsPreservedAsActualDropdownChoices(){
+        assertEquals(listOf("Chevron","Shell"),GuidedArchiveSearch.choices(rows,"Gas station"))
+        assertEquals(listOf("2"),lookup("Gas station","Exact","Shell").map{it.id})
+    }
+    @Test fun previousTitleLookupStillWorks(){
+        assertEquals(listOf("2"),lookup("Request title","Exact","Happy Camp").map{it.id})
+    }
+    @Test fun sentDateSearchSupportsExactDatesAndRanges(){
+        assertEquals(listOf("2"),lookup("Sent date","Exact recorded date","Oct 10, 2026").map{it.id})
+        assertEquals(listOf("2","1"),lookup("Sent date","Between dates","10/08/2026","10/10/2026").map{it.id})
     }
     @Test fun dateParsedAsCalendarDayAcrossDisplayFormats(){
         val a=GuidedArchiveSearch.parseDate("10/07/2026")

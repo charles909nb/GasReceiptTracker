@@ -676,9 +676,11 @@ class MainActivity : Activity() {
         label("Choose a recorded date, amount, vehicle, or PR number. Date ranges and nearby amounts update instantly.",14f)
         val saved=TrackerDatabase(this).use{it.receiptSearch("",5000)}
         val states=mutableMapOf<String,String>()
+        val sentDates=mutableMapOf<String,String>()
         val orders=workflow.all()
         for(i in 0 until orders.length()){
             val request=orders.getJSONObject(i)
+            sentDates[request.optString("id")]=request.optString("sentAt")
             states[request.optString("id")]=when(request.optString("status")){
                 "sent"->"Sent"
                 "archived"->"Archived"
@@ -689,7 +691,8 @@ class MainActivity : Activity() {
             ArchiveSearchRow(
                 id=i.toString(),date=r.date,amount=GuidedArchiveSearch.parseAmount(r.total)?:0.0,
                 vehicle=r.vehicle,reference=r.reference,status=states[r.requestId]?:"Draft",
-                title=r.requestTitle
+                title=r.requestTitle, station=r.station,
+                sentDate=sentDates[r.requestId].orEmpty()
             )
         }
         val lookup=saved.indices.associate{i->i.toString() to saved[i]}
@@ -734,7 +737,7 @@ class MainActivity : Activity() {
         val packetList=FinancePacketArchive.entries(this)
         val rows=packetList.mapIndexed{i,p->
             ArchiveSearchRow(i.toString(),p.purchaseDate,p.amount,p.vehicle,
-                p.reference,"Sent",p.title)
+                p.reference,"Sent",p.title,p.receipt.optString("station"),p.sentDate)
         }
         val packets=packetList.indices.associate{i->i.toString() to packetList[i]}
         val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}

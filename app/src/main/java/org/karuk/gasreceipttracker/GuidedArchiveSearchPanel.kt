@@ -59,7 +59,7 @@ class GuidedArchiveSearchPanel(
                 val selected=GuidedArchiveSearch.fields[position]
                 if(criteria.field!=selected){
                     criteria=criteria.copy(field=selected,match=when(selected){
-                        "Purchase date"->"Any date"
+                        "Purchase date", "Sent date"->"Any date"
                         "Amount"->"Near amount (5 dollars)"
                         else->"Exact"
                     },first="",second="")
@@ -87,8 +87,8 @@ class GuidedArchiveSearchPanel(
     private fun buildDetails(){
         details.removeAllViews()
         when(criteria.field){
-            "Purchase date","Amount" -> {
-                val modes=if(criteria.field=="Purchase date")GuidedArchiveSearch.dateModes
+            "Purchase date", "Sent date", "Amount" -> {
+                val modes=if(criteria.field=="Purchase date" || criteria.field=="Sent date")GuidedArchiveSearch.dateModes
                     else GuidedArchiveSearch.amountModes
                 caption("Match",details)
                 val choice=spinner(modes,modes.indexOf(criteria.match).coerceAtLeast(0))
@@ -105,7 +105,7 @@ class GuidedArchiveSearchPanel(
                             12f,false,TrackerStyle.muted))
                         return
                     }
-                    val captionText=if(criteria.field=="Purchase date") "recorded date" else "saved amount"
+                    val captionText=if(criteria.field=="Amount") "saved amount" else "recorded date"
                     caption(when {
                         mode.startsWith("Near") -> "Find records near this $captionText"
                         mode.startsWith("Between") -> "From $captionText (inclusive)"
@@ -151,9 +151,9 @@ class GuidedArchiveSearchPanel(
                     }
                 }
             }
-            "PR number" -> {
-                caption("Choose a recorded request number",details)
-                details.addView(dropdown("PR number",criteria.first){value->
+            "PR number", "Gas station", "Request title" -> {
+                caption("Choose an existing "+criteria.field.lowercase(),details)
+                details.addView(dropdown(criteria.field,criteria.first){value->
                     criteria=criteria.copy(first=value);notifyResults()
                 })
             }
@@ -164,8 +164,10 @@ class GuidedArchiveSearchPanel(
         val edit=AutoCompleteTextView(activity).apply{
             threshold=0
             hint=when(field){
-                "Purchase date"->"Select an existing date"
+                "Purchase date", "Sent date"->"Select an existing date"
                 "Amount"->"Type $60 or choose an existing amount"
+                "Gas station"->"Select a saved gas station"
+                "Request title"->"Select a saved request title"
                 else->"Search saved request numbers"
             }
             contentDescription=hint

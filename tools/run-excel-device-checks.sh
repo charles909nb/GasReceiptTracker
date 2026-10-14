@@ -10,7 +10,7 @@ if [ "$test_status" -ne 0 ]; then exit "$test_status"; fi
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r org.karuk.gasreceipttracker.preview.test/androidx.test.runner.AndroidJUnitRunner | tee verification-instrumentation.txt
-grep -q 'OK (60 tests)' verification-instrumentation.txt
+grep -q 'OK (63 tests)' verification-instrumentation.txt
 adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
 test -s verification/UI_Home.png
 test -s verification/UI_Signed_Pdf.png

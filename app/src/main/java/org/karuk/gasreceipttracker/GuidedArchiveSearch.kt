@@ -12,7 +12,9 @@ data class ArchiveSearchRow(
     val vehicle: String,
     val reference: String,
     val status: String,
-    val title: String
+    val title: String,
+    val station: String = "",
+    val sentDate: String = ""
 )
 
 data class ArchiveSearchCriteria(
@@ -27,7 +29,8 @@ data class ArchiveSearchCriteria(
  * The suggestion list can NEVER contain a value that is not in these rows.
  */
 object GuidedArchiveSearch {
-    val fields = listOf("Purchase date", "Amount", "Vehicle", "PR number", "Status", "All records")
+    val fields = listOf("Purchase date", "Amount", "Vehicle", "PR number", "Status",
+        "Gas station", "Request title", "Sent date", "All records")
     val sorts = listOf("Newest purchase first", "Oldest purchase first",
         "Amount: highest first", "Amount: lowest first")
     val dateModes = listOf("Any date", "Exact recorded date", "Between dates", "Near date (7 days)")
@@ -63,6 +66,12 @@ object GuidedArchiveSearch {
             .distinct().sortedByDescending { parseDate(it) }
         "Amount" -> rows.map { money(it.amount) }.distinct()
             .sortedBy { parseAmount(it) }
+        "Sent date" -> rows.map { it.sentDate }.filter { parseDate(it)!=null }
+            .distinct().sortedByDescending { parseDate(it) }
+        "Gas station" -> rows.map { it.station.trim() }.filter { it.isNotBlank() }
+            .distinct().sorted()
+        "Request title" -> rows.map { it.title.trim() }.filter { it.isNotBlank() }
+            .distinct().sorted()
         "Vehicle" -> rows.map { it.vehicle.trim() }.filter { it.isNotBlank() }
             .distinct().sorted()
         "PR number" -> rows.map { it.reference.trim() }.filter { it.isNotBlank() }
@@ -86,7 +95,7 @@ object GuidedArchiveSearch {
                     abs((parseAmount(it)?:Double.MAX_VALUE)-target) <= nearAmountDollars + .00001
                 }.sortedBy { abs((parseAmount(it)?:0.0)-target) }
             }
-            "Purchase date" -> {
+            "Purchase date","Sent date" -> {
                 val target=parseDate(query)
                 if(target!=null) saved.filter {
                     abs((parseDate(it)?:Long.MAX_VALUE)-target)<=nearDateDays
@@ -115,10 +124,10 @@ object GuidedArchiveSearch {
         val end=criteria.second.trim()
         val matches=rows.filter { r ->
             when(criteria.field) {
-                "Purchase date" -> {
+                "Purchase date", "Sent date" -> {
                     if(criteria.match=="Any date") true
                     else {
-                        val d=parseDate(r.date)
+                        val d=parseDate(if(criteria.field=="Sent date")r.sentDate else r.date)
                         val first=if(q.isBlank())null else parseDate(q)
                         val last=if(end.isBlank())null else parseDate(end)
                         when(criteria.match) {
@@ -145,6 +154,8 @@ object GuidedArchiveSearch {
                     }
                 }
                 "Vehicle" -> q.isEmpty() || r.vehicle.equals(q,true)
+                "Gas station" -> q.isEmpty() || r.station.contains(q,true)
+                "Request title" -> q.isEmpty() || r.title.contains(q,true)
                 "PR number" -> q.isEmpty() || r.reference.contains(q,true)
                 "Status" -> q.isEmpty() || r.status.equals(q,true)
                 else -> true
