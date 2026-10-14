@@ -129,6 +129,7 @@ class MainActivity : Activity() {
         val name=edit("Your name",pref("driver"));val department=edit("Department / program",pref("department"))
         val email=edit("Your email address (optional)",pref("myEmail"))
         val card=edit("Credit card last four digits (optional)",pref("cardLast4"))
+        val cardBrand=edit("Default payment card type (Visa, Mastercard, etc.)",pref("cardBrand"))
         val vehicles=edit("Vehicle numbers separated by commas (e.g. 309, 310)",pref("vehicles"))
         val recipient=edit("Default recipient email (optional)",pref("emailTo"))
         val ccSelf=CheckBox(this).apply{text="CC my email on every reimbursement";isChecked=prefs.getBoolean("ccSelf",true)
@@ -139,6 +140,7 @@ class MainActivity : Activity() {
             val numbers=vehicles.text.toString().split(",").map{it.trim()}.filter{it.isNotBlank()}.distinct()
             prefs.edit().putString("driver",name.text.toString().trim()).putString("department",department.text.toString().trim())
                 .putString("myEmail",email.text.toString().trim()).putString("cardLast4",card.text.toString().trim())
+                .putString("cardBrand",ReceiptPrivacy.brand(cardBrand.text.toString()))
                 .putString("vehicles",numbers.joinToString(",")).putString("vehicle",numbers.firstOrNull().orEmpty())
                 .putString("emailTo",recipient.text.toString().trim()).putBoolean("ccSelf",ccSelf.isChecked).putBoolean("setupDone",true).commit()
             workflow.sync();show("home")
@@ -220,6 +222,40 @@ class MainActivity : Activity() {
             override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){prefs.edit().putString(key,s?.toString().orEmpty()).apply()}
             override fun afterTextChanged(s:Editable?){}
         })
+    }
+    /** The complete result, including source highlights, belongs to this PR's fuel draft. */
+    private fun saveOcrResult(scan:FuelScan?){
+        val editor=prefs.edit()
+        if(scan==null){
+            editor.putString("ocr_warn","Text not recognized; check the photo and enter fields manually.")
+                .putString("ocr_evidence","[]").putString("ocr_reviewed_at","")
+        }else{
+            editor.putString("ocr_station",scan.station).putString("ocr_date",scan.date)
+                .putString("ocr_time",scan.time).putString("ocr_fuel_type",scan.fuelType)
+                .putString("ocr_gallons",scan.gallons).putString("ocr_price",scan.price)
+                .putString("ocr_total",scan.total).putString("ocr_card_type",scan.cardType)
+                .putString("ocr_card_last4",scan.cardLast4)
+                .putString("ocr_raw",ReceiptPrivacy.redact(scan.rawText).take(35000))
+                .putString("ocr_evidence",ReceiptEvidence.asJson(scan.evidence).toString())
+                .putString("ocr_warn",scan.warnings.joinToString("; "))
+                .remove("ocr_reviewed_at").remove("ocr_corrections")
+                .remove("ocr_card_verification").remove("ocr_card_mismatch_ack")
+        }
+        check(editor.commit()){"Could not save the scan on this phone."}
+        workflow.sync()
+    }
+    private fun checkReceipt(saved:JSONObject?=null){
+        if(saved==null && pref("pending_receipt").isBlank()){
+            alert("Scan or photograph a receipt first.");return
+        }
+        val intent=Intent(this,ReceiptReviewActivity::class.java)
+        if(saved==null){
+            intent.putExtra(ReceiptReviewActivity.EXTRA_REQUEST_ID,workflow.current().getString("id"))
+        }else{
+            intent.putExtra(ReceiptReviewActivity.EXTRA_HISTORY,true)
+            intent.putExtra(ReceiptReviewActivity.EXTRA_RECEIPT,saved.toString())
+        }
+        startActivityForResult(intent,211)
     }
     private fun fuel(){
         draw("Fuel & receipts");requestBanner()
