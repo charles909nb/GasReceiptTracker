@@ -149,7 +149,7 @@ class MainActivity : Activity() {
             if(documentBusy){alert("Please wait for the document to finish.");return}
             currentScreen=where
             when(where){"fuel"->fuel();"sheets"->sheets();"email"->emailSettings();"sign"->signatureScreen();"backup"->backupScreen()
-                "setup"->setupScreen();"requests"->requestList();"more"->moreScreen();else->trips()}
+                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"more"->moreScreen();else->trips()}
         }catch(e:Exception){alert(e.message.orEmpty())}
     }
     override fun onSaveInstanceState(outState:Bundle){outState.putString("screen",currentScreen);outState.putString("camera",cameraUri?.toString());super.onSaveInstanceState(outState)}
@@ -217,14 +217,16 @@ class MainActivity : Activity() {
     private fun fuel(){
         draw("Fuel & receipts");requestBanner()
         val receipts=data("receipts");label("Attach a receipt photograph and check the fueling information.")
-        val station=edit("Gas station",pref("ocr_station"));val date=edit("Fuel date and time",pref("ocr_date").ifBlank{now})
+        val station=edit("Gas station",pref("ocr_station"));val date=edit("Receipt date (as printed)",pref("ocr_date"))
         val vehicle=vehiclePicker(pref("draftFuelVehicle").ifBlank{pref("vehicle")},"draftFuelVehicle")
         val odometer=edit("Odometer at fueling",pref("draftOdometer"),true)
         val gallons=edit("Total gallons",pref("ocr_gallons"),true);val price=edit("Price per gallon",pref("ocr_price"),true)
         val cost=edit("Total cost",pref("ocr_total"),true)
         autoSaveField(station,"ocr_station");autoSaveField(date,"ocr_date");autoSaveField(odometer,"draftOdometer")
         autoSaveField(gallons,"ocr_gallons");autoSaveField(price,"ocr_price");autoSaveField(cost,"ocr_total")
+        label("The original receipt date stays with the purchase. The PR will use today\u0027s date when generated.",14f)
         label("Entries are saved automatically as you type.",14f)
+        if(pref("ocr_warn").isNotBlank())label("Check OCR: "+pref("ocr_warn"),14f)
         label(if(pref("pending_receipt").isBlank())"No receipt image attached" else "Receipt image attached")
         label("Receipt scanning suggests values. Check each value against the image before saving.",14f)
         action("Scan and crop receipt automatically"){
@@ -256,12 +258,17 @@ class MainActivity : Activity() {
             ReceiptReader.scan(this,Uri.parse(image)){result->runOnUiThread{
                 if(workflow.current().getString("id")!=requestId)return@runOnUiThread
                 if(result==null){alert("Unable to read receipt. Enter values manually.");return@runOnUiThread}
-                station.setText(result.station)
+                if(result.station.isNotBlank())station.setText(result.station)
                 if(result.date.isNotBlank())date.setText(result.date)
                 if(result.gallons.isNotBlank())gallons.setText(result.gallons)
                 if(result.price.isNotBlank())price.setText(result.price)
                 if(result.total.isNotBlank())cost.setText(result.total)
-                workflow.sync();alert("Receipt scanned. Check and correct the values before saving.")
+                prefs.edit().putString("ocr_raw",result.rawText.take(35000))
+                    .putString("ocr_fuel_type",result.fuelType).putString("ocr_card_last4",result.cardLast4)
+                    .putString("ocr_time",result.time).putString("ocr_warn",result.warnings.joinToString("; ")).commit()
+                workflow.sync()
+                alert(if(result.warnings.isEmpty()) "Receipt data found. Check it before saving."
+                      else "OCR needs review: "+result.warnings.joinToString("; "))
             }}
         }
         action("Save fuel draft"){
@@ -273,8 +280,8 @@ class MainActivity : Activity() {
             if(workflow.pendingEmail()!=null){offerEmailConfirmation(true);return@action}
             if(receipts.length()>0){alert("This request already has a receipt. Complete it or start a new travel / PR in Requests.");return@action}
             val selected=pref("pending_receipt");val od=odometer.text.toString().toDoubleOrNull();val gal=gallons.text.toString().toDoubleOrNull();val total=cost.text.toString().toDoubleOrNull()
-            if(selected.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")||od==null||!od.isFinite()||od<0||gal==null||!gal.isFinite()||gal<=0||total==null||!total.isFinite()||total<=0){
-                alert("Attach receipt and enter vehicle, odometer, gallons and total cost");return@action
+            if(selected.isBlank()||date.text.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")||od==null||!od.isFinite()||od<0||gal==null||!gal.isFinite()||gal<=0||total==null||!total.isFinite()||total<=0){
+                alert("Attach receipt and enter printed receipt date, vehicle, odometer, gallons and total.");return@action
             }
             receipts.put(JSONObject().put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
                 .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",pref("cardLast4"))
