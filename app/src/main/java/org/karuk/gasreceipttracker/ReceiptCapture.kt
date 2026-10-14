@@ -61,7 +61,8 @@ data class FuelScan(
 /** OCR reads locally. The driver reviews extracted values before saving. */
 object ReceiptReader {
     private fun quality(s: FuelScan): Int =
-        listOf(s.gallons, s.price, s.total, s.date, s.station).count { it.isNotBlank() }
+        listOf(s.gallons, s.price, s.total).count { it.isNotBlank() } * 10 +
+            listOf(s.date, s.station).count { it.isNotBlank() } - s.warnings.size
 
     private fun contrastEnhanced(context: Context, uri: Uri): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -110,8 +111,11 @@ object ReceiptReader {
                     if (enhanced == null) { finish(first); return@addOnSuccessListener }
                     recognizer.process(InputImage.fromBitmap(enhanced, 0)).addOnSuccessListener { extra ->
                         val second = ReceiptTextParser.parse(extra.text)
+                        // Labels can be legible in different contrast passes.
+                        // Combine the source OCR strings to recover all printed fields.
+                        val combined = ReceiptTextParser.parse(first.rawText + "\n" + extra.text)
                         enhanced.recycle()
-                        finish(if (quality(second) > quality(first)) second else first)
+                        finish(listOf(first,second,combined).maxByOrNull { quality(it) } ?: first)
                     }.addOnFailureListener {
                         enhanced.recycle()
                         finish(first)
