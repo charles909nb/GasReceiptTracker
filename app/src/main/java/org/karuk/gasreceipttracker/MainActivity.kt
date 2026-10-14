@@ -271,7 +271,9 @@ class MainActivity : Activity() {
         label("Entries are saved automatically as you type.",14f)
         if(pref("ocr_warn").isNotBlank())label("Check OCR: "+pref("ocr_warn"),14f)
         label(if(pref("pending_receipt").isBlank())"No receipt image attached" else "Receipt image attached")
-        label("Receipt scanning suggests values. Check each value against the image before saving.",14f)
+        label("After scanning, the receipt opens with highlighted numbers. Tap one or step through each field to correct it.",14f)
+        if(pref("pending_receipt").isNotBlank())
+            action("Check receipt with highlighted numbers"){checkReceipt()}
         action("Scan and crop receipt automatically"){
             val options=GmsDocumentScannerOptions.Builder().setGalleryImportAllowed(true).setPageLimit(1)
                 .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG).setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL).build()
@@ -295,23 +297,13 @@ class MainActivity : Activity() {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),202)
         }
         action("Read receipt photo (OCR)"){
-            val image=pref("pending_receipt")
-            if(image.isBlank()){alert("Photograph or choose a receipt first");return@action}
+            val photo=pref("pending_receipt")
+            if(photo.isBlank()){alert("Photograph or choose a receipt first");return@action}
             val requestId=workflow.current().getString("id")
-            ReceiptReader.scan(this,Uri.parse(image)){result->runOnUiThread{
+            ReceiptReader.scan(this,Uri.parse(photo)){scan->runOnUiThread{
                 if(workflow.current().getString("id")!=requestId)return@runOnUiThread
-                if(result==null){alert("Unable to read receipt. Enter values manually.");return@runOnUiThread}
-                if(result.station.isNotBlank())station.setText(result.station)
-                if(result.date.isNotBlank())date.setText(result.date)
-                if(result.gallons.isNotBlank())gallons.setText(result.gallons)
-                if(result.price.isNotBlank())price.setText(result.price)
-                if(result.total.isNotBlank())cost.setText(result.total)
-                prefs.edit().putString("ocr_raw",result.rawText.take(35000))
-                    .putString("ocr_fuel_type",result.fuelType).putString("ocr_card_last4",result.cardLast4)
-                    .putString("ocr_time",result.time).putString("ocr_warn",result.warnings.joinToString("; ")).commit()
-                workflow.sync()
-                alert(if(result.warnings.isEmpty()) "Receipt data found. Check it before saving."
-                      else "OCR needs review: "+result.warnings.joinToString("; "))
+                try{saveOcrResult(scan);checkReceipt()}
+                catch(e:Exception){alert("Receipt review could not open: "+e.message)}
             }}
         }
         action("Save fuel draft"){
