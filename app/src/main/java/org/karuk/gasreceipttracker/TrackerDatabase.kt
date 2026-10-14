@@ -11,10 +11,12 @@ import java.util.UUID
 
 /**
  * Private on-device SQLite database, indexed independently of the active form.
+ * Automatic migration from schema 1 adds the searchable Finance packets table.
  * The existing preferences/request state remain compatible with earlier app builds
  * and older backups. No network or account is required.
  */
-class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_records.db", null, 1) {
+class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_records.db", null, 2) {
+    private val appContext=context.applicationContext
     data class SavedReceipt(
         val id: String, val requestId: String, val reference: String, val requestTitle: String,
         val station: String, val date: String, val vehicle: String, val gallons: String,
@@ -52,9 +54,26 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
         db.execSQL("CREATE INDEX index_receipt_request ON fuel_receipts(request_id)")
         db.execSQL("CREATE INDEX index_trip_request ON trips(request_id)")
         db.execSQL("CREATE INDEX index_doc_request ON documents(request_id)")
+        createFinanceTable(db)
+    }
+    private fun createFinanceTable(db:SQLiteDatabase){
+        db.execSQL("""CREATE TABLE IF NOT EXISTS finance_packets (
+            request_id TEXT PRIMARY KEY NOT NULL, reference TEXT, title TEXT,
+            pr_date TEXT, receipt_date TEXT, receipt_date_raw TEXT,
+            amount_cents INTEGER NOT NULL DEFAULT 0, vehicle TEXT, station TEXT,
+            sent_at TEXT, sent_epoch INTEGER NOT NULL DEFAULT 0,
+            recipient TEXT, cc TEXT, subject TEXT, pdf_uri TEXT,
+            sha256 TEXT, pdf_bytes INTEGER NOT NULL DEFAULT 0,
+            finance_status TEXT NOT NULL DEFAULT 'Awaiting Finance',
+            notes TEXT NOT NULL DEFAULT '', updated_epoch INTEGER NOT NULL DEFAULT 0
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_finance_pr_date ON finance_packets(pr_date)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_finance_purchase ON finance_packets(receipt_date)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_finance_amount ON finance_packets(amount_cents)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_finance_vehicle_status ON finance_packets(vehicle,finance_status)")
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        throw IllegalStateException("Database upgrade from $oldVersion to $newVersion requires a migration, not deletion.")
+        if(oldVersion<2 && newVersion>=2)createFinanceTable(db)
     }
 
     private fun values(vararg pairs: Pair<String, Any?>): ContentValues = ContentValues().apply {
@@ -110,6 +129,7 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
                         "raw_ocr" to item.optString("ocrRawText"), "payload" to item.toString(),
                         "modified_at" to now))
                 }
+                FinancePackets.indexSent(db,appContext,order)
             }
             // Never persist more than the last four digits of a card.
             for (key in listOf("driver", "vehicle", "vehicles", "department", "cardLast4", "cardBrand",
@@ -167,7 +187,7 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
 
     @Synchronized fun snapshot(): JSONObject {
         val data=JSONObject().put("schema",1)
-        for(table in listOf("requests","trips","fuel_receipts","documents","activity_log","user_settings","app_state")) {
+        for(table in listOf("requests","trips","fuel_receipts","documents","activity_log","user_settings","app_state","finance_packets")) {
             val rows=JSONArray()
             readableDatabase.rawQuery("SELECT * FROM $table",null).use{cursor->
                 while(cursor.moveToNext()){
@@ -190,7 +210,7 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
         val db=writableDatabase
         db.beginTransaction()
         try {
-            for(table in listOf("requests","trips","fuel_receipts","documents","activity_log","user_settings","app_state")) {
+            for(table in listOf("requests","trips","fuel_receipts","documents","activity_log","user_settings","app_state","finance_packets")) {
                 db.delete(table, null, null)
                 val items=snapshot.optJSONArray(table) ?: JSONArray()
                 for(i in 0 until items.length()) {
