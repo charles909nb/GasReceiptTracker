@@ -462,6 +462,7 @@ class MainActivity : Activity() {
         action("Save original Gas requisition as Excel (.xls)"){continueDocument("excel")}
         action("Generate and review complete reimbursement PDF"){continueDocument("packet")}
         action("Email complete reimbursement packet"){continueDocument("email")}
+        action("Open Finance packet archive"){startActivity(Intent(this,FinanceArchiveActivity::class.java))}
         action("Review usage PDF without emailing"){exportPdf(entries,receipts,true)}
         action("Create and email usage PDF"){exportPdf(entries,receipts,false)}
         label("Review the PDF here first; the separate Email button opens your email draft.",14f)
