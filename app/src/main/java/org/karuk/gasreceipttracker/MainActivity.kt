@@ -151,7 +151,7 @@ class MainActivity : Activity() {
             if(documentBusy){alert("Please wait for the document to finish.");return}
             currentScreen=where
             when(where){"fuel"->fuel();"sheets"->sheets();"email"->emailSettings();"sign"->signatureScreen();"backup"->backupScreen()
-                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"more"->moreScreen();else->trips()}
+                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"finance"->financePackets();"mileage"->vehicleMileage();"more"->moreScreen();else->trips()}
         }catch(e:Exception){alert(e.message.orEmpty())}
     }
     override fun onSaveInstanceState(outState:Bundle){outState.putString("screen",currentScreen);outState.putString("camera",cameraUri?.toString());super.onSaveInstanceState(outState)}
@@ -713,10 +713,111 @@ class MainActivity : Activity() {
         })
         refresh()
     }
+    private fun financePackets(){
+        draw("Finance packet archive")
+        label("Search confirmed-sent complete PDFs. Default: newest purchase date first.",14f)
+        val search=edit("Purchase date, amount, vehicle, PR number or title")
+        val sorts=listOf("Newest purchase first","Oldest purchase first","Amount: highest first","Amount: lowest first")
+        val picker=Spinner(this)
+        picker.adapter=ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,sorts)
+        body.addView(picker)
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        body.addView(results)
+        fun refresh(){
+            results.removeAllViews()
+            try{
+                val matches=FinancePacketArchive.filter(FinancePacketArchive.entries(this),
+                    search.text.toString(),picker.selectedItem?.toString().orEmpty())
+                results.addView(TrackerStyle.text(this,matches.size.toString()+
+                    " saved transaction(s) with complete Finance packets.",13f,false,TrackerStyle.muted))
+                for(packet in matches){
+                    val amount=String.format(Locale.US,"$%.2f",packet.amount)
+                    results.addView(TrackerStyle.card(this,packet.purchaseDate+"  "+amount,
+                        packet.reference+" • Vehicle "+packet.vehicle+"\n"+packet.title+
+                        "\nSent to Finance: "+packet.sentDate))
+                    val file=FinancePacketArchive.savedFile(this,packet)
+                    if(file==null){
+                        results.addView(TrackerStyle.text(this,
+                            "PDF not found locally. Restore the app backup to recover it.",13f,false,TrackerStyle.red))
+                        continue
+                    }
+                    val uri=OfficialPurchaseRequisition.uri(this,file)
+                    results.addView(TrackerStyle.button(this,"Open full PDF packet"){previewPdf(uri)})
+                    results.addView(TrackerStyle.button(this,"Resend saved packet by email"){
+                        prepareEmail(uri,JSONArray().put(packet.receipt),false)
+                    })
+                    results.addView(TrackerStyle.button(this,"Download / export PDF"){
+                        val name=packet.reference+"_Finance_"+packet.purchaseDate.replace(Regex("[^0-9A-Za-z]"),"_")+".pdf"
+                        prefs.edit().putString("pendingFinancePdfExport",file.absolutePath)
+                            .putString("pendingFinancePdfName",name).commit()
+                        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
+                            .putExtra(Intent.EXTRA_TITLE,name),212)
+                    })
+                }
+                if(matches.isEmpty())results.addView(TrackerStyle.text(this,
+                    "No matching sent packets. Drafts are not labeled as sent.",14f))
+            }catch(e:Exception){results.addView(TrackerStyle.text(this,"Archive error: "+e.message,14f))}
+        }
+        search.addTextChangedListener(object:TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){refresh()}
+            override fun afterTextChanged(s:Editable?){}
+        })
+        picker.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:android.view.View?,position:Int,id:Long){refresh()}
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+        }
+        refresh()
+    }
+    private fun vehicleMileage(){
+        draw("Vehicle fuel economy")
+        label("MPG = odometer miles since previous fueling ÷ gallons purchased now.",14f)
+        val fills=VehicleFuelAnalytics.fills(workflow.all())
+        val vehicles=fills.map{it.vehicle}.distinct().sorted()
+        if(vehicles.isEmpty()){
+            label("Record a fueling odometer and gallons to begin vehicle MPG history.",14f)
+            return
+        }
+        val picker=Spinner(this)
+        picker.adapter=ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,vehicles)
+        body.addView(picker)
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        body.addView(results)
+        fun refresh(){
+            results.removeAllViews()
+            val vehicle=picker.selectedItem?.toString()?:return
+            val series=VehicleFuelAnalytics.points(fills,vehicle)
+            results.addView(TrackerStyle.text(this,VehicleFuelAnalytics.summary(series),17f,true,TrackerStyle.ink))
+            if(series.isNotEmpty()){
+                results.addView(MileageGraph(this,series))
+                for(point in series.asReversed()){
+                    val info=String.format(Locale.US,
+                        "%s • %.1f MPG • %.0f miles / %.3f gallons\nOdometer %.0f",
+                        point.date,point.mpg,point.miles,point.gallons,point.odometer)
+                    results.addView(TrackerStyle.card(this,
+                        if(point.warning)"Possible maintenance check"else "Fueling interval",
+                        info+(if(point.warning)"\nMPG fell more than 20% below the previous three intervals."else ""),
+                        point.warning))
+                }
+            }
+            results.addView(TrackerStyle.text(this,
+                "Estimates assume comparable full-tank refills. Partial fills, missed fuelings, " +
+                    "idling, towing, weather or driving changes can distort MPG. " +
+                    "A warning suggests inspection, not a confirmed mechanical fault.",13f,false,TrackerStyle.muted))
+        }
+        picker.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:android.view.View?,position:Int,id:Long){refresh()}
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+        }
+        refresh()
+    }
     private fun requestList(){
         draw("Requests & history")
         if(workflow.pendingEmail()!=null)action("Confirm whether the last email was sent"){offerEmailConfirmation(true)}
         action("New travel / PR"){newRequestDialog(false)};action("Queue travel or work order"){newRequestDialog(true)}
+        action("Find complete packets sent to Finance"){show("finance")}
+        action("Vehicle MPG trends and maintenance flags"){show("mileage")}
         action("Search saved fuel receipts"){show("history")}
         val all=workflow.all();val activeId=workflow.current().getString("id");label("Open requests",20f)
         for(i in 0 until all.length()){
