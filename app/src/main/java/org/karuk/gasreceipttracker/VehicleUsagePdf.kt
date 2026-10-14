@@ -16,6 +16,19 @@ object VehicleUsagePdf {
         ink.typeface = if (bold) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
         canvas.drawText(value.take(max), x, y, ink)
     }
+    internal fun tripDate(value: String): String {
+        val raw=value.trim()
+        return Regex("^[A-Za-z]+ \\d{1,2}, \\d{4}").find(raw)?.value
+            ?: Regex("^\\d{4}-\\d{2}-\\d{2}").find(raw)?.value
+            ?: Regex("^\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}").find(raw)?.value
+            ?: raw
+    }
+    private fun dateOdometer(canvas: Canvas, date: String, odometer: String, x: Float, y: Float) {
+        val value=listOf(tripDate(date),odometer).filter{it.isNotBlank()}.joinToString(" / ")
+        ink.style=Paint.Style.FILL;ink.typeface=android.graphics.Typeface.DEFAULT;ink.textSize=9f
+        while(ink.textSize>5f && ink.measureText(value)>147f)ink.textSize-=.25f
+        canvas.drawText(value,x,y,ink)
+    }
     private fun rule(canvas: Canvas, x1: Float, y: Float, x2: Float) {
         ink.style = Paint.Style.STROKE
         ink.strokeWidth = 0.7f
@@ -43,9 +56,9 @@ object VehicleUsagePdf {
                 rule(canvas, 302f, y + 19, 344f)
                 rule(canvas, 477f, y + 19, 546f)
                 text(canvas, "START DATE/OD:", 70f, y + 43, 8f, true)
-                text(canvas, t.optString("startDate").substringBeforeLast(" ") + " " + t.optString("startOdometer"), 158f, y + 43, 9f, false, 27)
+                dateOdometer(canvas,t.optString("startDate"),t.optString("startOdometer"),158f,y+43)
                 text(canvas, "END DATE/OD:", 315f, y + 43, 8f, true)
-                text(canvas, t.optString("endDate").substringBeforeLast(" ") + " " + t.optString("endOdometer"), 395f, y + 43, 9f, false, 27)
+                dateOdometer(canvas,t.optString("endDate"),t.optString("endOdometer"),395f,y+43)
                 rule(canvas, 158f, y + 46, 308f)
                 rule(canvas, 395f, y + 46, 546f)
                 text(canvas, "DESTINATION:", 70f, y + 71, 8f, true)
