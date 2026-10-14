@@ -367,6 +367,13 @@ class MainActivity : Activity() {
         }
         label(if (ReimbursementPacket.hasTemplate(this))
             "Official requisition PDF is available" else "Official requisition PDF not imported")
+        action("Generate and review complete reimbursement PDF") {
+            try {
+                val pdf = ReimbursementPacket.create(this, entries, receipts,
+                    pref("driver"), pref("cardLast4"), pref("signatureFile"))
+                previewPdf(pdf)
+            } catch (e: Exception) { alert("Packet preview failed: " + e.message) }
+        }
         action("Generate and email complete reimbursement packet") {
             try {
                 val pdf = ReimbursementPacket.create(this, entries, receipts,
@@ -374,7 +381,8 @@ class MainActivity : Activity() {
                 sendPacket(pdf, receipts)
             } catch (e: Exception) { alert("Packet creation failed: " + e.message) }
         }
-        action("Create and email usage PDF") { exportPdf(entries, receipts) }
+        action("Review usage PDF without emailing") { exportPdf(entries, receipts, true) }
+        action("Create and email usage PDF") { exportPdf(entries, receipts, false) }
         label("Review the generated packet before emailing. The official requisition field alignment still requires verification.")
         action("Archive current sheet and start a new one") {
             var open = false
@@ -398,7 +406,18 @@ class MainActivity : Activity() {
             }
         }
     }
-    private fun exportPdf(entries: JSONArray, receipts: JSONArray) {
+    private fun previewPdf(uri: Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Review PDF"))
+        } catch (e: Exception) {
+            alert("No PDF viewer available: " + e.message)
+        }
+    }
+    private fun exportPdf(entries: JSONArray, receipts: JSONArray, previewOnly: Boolean = false) {
         if (entries.length() == 0 && receipts.length() == 0) { alert("No records to export"); return }
         val doc = PdfDocument()
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 12f }
@@ -442,7 +461,7 @@ class MainActivity : Activity() {
                 if (output == null) throw IllegalStateException("Cannot write PDF")
                 doc.writeTo(output)
             }
-            sendPacket(uri, receipts)
+            if (previewOnly) previewPdf(uri) else sendPacket(uri, receipts)
         } catch (e: Exception) { alert("PDF export failed: " + e.message) }
         finally { doc.close() }
     }
