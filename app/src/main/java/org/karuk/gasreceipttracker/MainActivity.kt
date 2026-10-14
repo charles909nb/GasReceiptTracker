@@ -271,6 +271,22 @@ class MainActivity : Activity() {
         val odometer=edit("Odometer at fueling",pref("draftOdometer"),true)
         val gallons=edit("Total gallons",pref("ocr_gallons"),true);val price=edit("Price per gallon",pref("ocr_price"),true)
         val cost=edit("Total cost",pref("ocr_total"),true)
+        label("Fuel tank filled to (for accurate MPG)",13f)
+        val fillLabels=listOf("Not sure - don't calculate MPG","Filled tank completely (Full)","Partial fill")
+        val fillTypes=listOf("unknown","full","partial")
+        val fillSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,fillLabels)
+            setSelection(fillTypes.indexOf(pref("draftFillType")).coerceAtLeast(0))
+            background=TrackerStyle.shape(this@MainActivity,Color.WHITE,TrackerStyle.line)
+            onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
+                override fun onNothingSelected(parent:AdapterView<*>?){}
+                override fun onItemSelected(parent:AdapterView<*>?,view:android.view.View?,position:Int,id:Long){
+                    prefs.edit().putString("draftFillType",fillTypes[position]).apply()
+                }
+            }
+        }
+        body.addView(fillSpinner,LinearLayout.LayoutParams(-1,dp(52)))
+        label("Full-to-full mileage requires two confirmed full tanks; partial gallons count between them.",13f)
         autoSaveField(station,"ocr_station");autoSaveField(date,"ocr_date");autoSaveField(odometer,"draftOdometer")
         autoSaveField(gallons,"ocr_gallons");autoSaveField(price,"ocr_price");autoSaveField(cost,"ocr_total")
         label("The original receipt date stays with the purchase. The PR will use today\u0027s date when generated.",14f)
@@ -351,9 +367,12 @@ class MainActivity : Activity() {
                 .put("ocrWarnings",pref("ocr_warn"))
                 .put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
                 .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",actualCard)
+                .put("fillType",fillTypes[fillSpinner.selectedItemPosition])
+                .put("fillTypeConfirmedAt",if(fillSpinner.selectedItemPosition==0)""else now)
+                .put("fillTypeSource",if(fillSpinner.selectedItemPosition==0)"unknown"else "user")
                 .put("gallons",gallons.text.toString()).put("price",price.text.toString()).put("cost",cost.text.toString()).put("image",selected))
             store("receipts",receipts)
-            val clearing=prefs.edit().remove("pending_receipt").remove("draftOdometer")
+            val clearing=prefs.edit().remove("pending_receipt").remove("draftOdometer").remove("draftFillType")
                 .putString("vehicle",vehicle.selectedItem.toString())
                 .putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString())
             RequestWorkflow.DRAFT_KEYS.filter{it.startsWith("ocr_")}.forEach{clearing.remove(it)}
