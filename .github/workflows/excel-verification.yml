@@ -1,7 +1,7 @@
 name: Verify worksheet and request workflow on Android
 on:
   push:
-    branches: [main, excel-embedded-finish, workflow-ui-v1-9]
+    branches: [main, excel-embedded-finish, workflow-ui-v1-9, receipt-date-history-v2]
     paths: ['app/**', 'tools/run-excel-device-checks.sh', '.github/workflows/excel-verification.yml']
   pull_request:
     paths: ['app/**', 'tools/run-excel-device-checks.sh', '.github/workflows/excel-verification.yml']
@@ -53,7 +53,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GasReceiptTracker-1.9-Workflow-Verified
+          name: GasReceiptTracker-2.0-Receipt-History-Tested
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/androidTests/
