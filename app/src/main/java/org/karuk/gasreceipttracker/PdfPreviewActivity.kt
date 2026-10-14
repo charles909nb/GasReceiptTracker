@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.widget.*
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.util.concurrent.Executors
 
 /** Offline, in-app review. It never opens email or transmits a document. */
@@ -20,7 +22,13 @@ class PdfPreviewActivity : Activity() {
     @Volatile private var closing=false
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
-        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(12,36,12,12)}
+        val margin=(12*resources.displayMetrics.density).toInt()
+        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(margin,margin,margin,margin)}
+        ViewCompat.setOnApplyWindowInsetsListener(root){view,insets->
+            val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(margin+bars.left,margin+bars.top,margin+bars.right,margin+bars.bottom)
+            insets
+        }
         val title=TextView(this).apply{text="Review PDF - not sent";textSize=20f};root.addView(title)
         status=TextView(this).apply{text="Opening document..."};root.addView(status)
         val controls=LinearLayout(this)
@@ -32,7 +40,7 @@ class PdfPreviewActivity : Activity() {
         image=ImageView(this).apply{setBackgroundColor(Color.WHITE);adjustViewBounds=true}
         val vertical=ScrollView(this);val horizontal=HorizontalScrollView(this)
         horizontal.addView(image);vertical.addView(horizontal);root.addView(vertical,LinearLayout.LayoutParams(-1,0,1f))
-        setContentView(root)
+        setContentView(root);ViewCompat.requestApplyInsets(root)
         val uri=intent.data
         if(uri==null){status.text="No PDF was selected";return}
         worker.execute{
@@ -40,7 +48,7 @@ class PdfPreviewActivity : Activity() {
                 val fd=contentResolver.openFileDescriptor(uri,"r")?:error("Cannot open PDF")
                 renderer=try{PdfRenderer(fd)}catch(e:Exception){fd.close();throw e}
                 runOnUiThread{if(!closing)render()}
-            }catch(e:Exception){runOnUiThread{status.text="Preview could not open: "+e.message}}
+            }catch(e:Exception){runOnUiThread{if(!closing)status.text="Preview could not open: "+e.message}}
         }
     }
     private fun render(){
@@ -51,8 +59,10 @@ class PdfPreviewActivity : Activity() {
             try{
                 val pdf=renderer?:return@execute
                 val new=pdf.openPage(selected).use { page ->
-                    val width=(resources.displayMetrics.widthPixels*requestedZoom).toInt().coerceIn(400,1600)
-                    val height=(width.toFloat()*page.height/page.width).toInt().coerceAtMost(2400)
+                    val desired=(resources.displayMetrics.widthPixels*requestedZoom).coerceIn(400f,1600f)
+                    val factor=minOf(desired/page.width,2400f/page.height)
+                    val width=(page.width*factor).toInt().coerceAtLeast(1)
+                    val height=(page.height*factor).toInt().coerceAtLeast(1)
                     Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888).also{it.eraseColor(Color.WHITE);page.render(it,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)}
                 }
                 runOnUiThread{
@@ -63,5 +73,10 @@ class PdfPreviewActivity : Activity() {
             }catch(e:Exception){runOnUiThread{if(!closing)status.text="Preview failed: "+e.message}}
         }
     }
-    override fun onDestroy(){closing=true;worker.execute{renderer?.close();renderer=null};worker.shutdown();image.setImageDrawable(null);bitmap?.recycle();super.onDestroy()}
+    override fun onDestroy(){
+        closing=true
+        worker.execute{renderer?.close();renderer=null};worker.shutdown()
+        if(::image.isInitialized)image.setImageDrawable(null)
+        bitmap?.recycle();super.onDestroy()
+    }
 }
