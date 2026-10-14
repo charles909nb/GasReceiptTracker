@@ -166,7 +166,8 @@ class MainActivity : Activity() {
     }
     private fun moreScreen(){
         draw("Settings & tools")
-        body.addView(TrackerStyle.card(this,"Your workspace","Version 1.9  •  Original Karuk Gas worksheet included"))
+        val version=runCatching{packageManager.getPackageInfo(packageName,0).versionName}.getOrNull()?:"current"
+        body.addView(TrackerStyle.card(this,"Your workspace","Version "+version+"  •  Original Karuk Gas worksheet included"))
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
         action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
     }
