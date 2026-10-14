@@ -10,7 +10,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 14)
         versionName = "2.3-guided-search"
     }
     buildTypes {
