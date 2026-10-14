@@ -112,7 +112,7 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
                 }
             }
             // Never persist more than the last four digits of a card.
-            for (key in listOf("driver", "vehicle", "vehicles", "department", "cardLast4",
+            for (key in listOf("driver", "vehicle", "vehicles", "department", "cardLast4", "cardBrand",
                 "myEmail", "emailTo", "emailCc", "emailSubject", "emailBody", "ccSelf")) {
                 val value = prefs.all[key]?.toString() ?: continue
                 put(db, "user_settings", values("key" to key, "value" to value))
