@@ -20,7 +20,8 @@ object TrackerBackup {
     fun export(context:Context,destination:Uri){
         RequestWorkflow(context).sync()
         val prefs=context.getSharedPreferences("usage_data",Context.MODE_PRIVATE)
-        val data=JSONObject().put("format",2)
+        val data=JSONObject().put("format",3)
+            .put("databaseSnapshot",TrackerDatabase(context).use{it.snapshot()})
         prefs.all.forEach{(k,v)->if(k in keys || k.startsWith("lastOdometer_"))data.put(k,v)}
         context.contentResolver.openOutputStream(destination,"wt")?.use{stream->ZipOutputStream(stream).use{zip->
             zip.putNextEntry(ZipEntry("data.json"));zip.write(data.toString().toByteArray());zip.closeEntry()
@@ -47,15 +48,15 @@ object TrackerBackup {
                         val out=File(stage,name).apply{parentFile?.mkdirs()};var size=0L
                         out.outputStream().use{target->
                             var n=zip.read(buffer)
-                            while(n>=0){size+=n;total+=n;require(size<=25_000_000 && total<=150_000_000){"Backup exceeds safe restore size"}
+                            while(n>=0){size+=n;total+=n;require(size<=50_000_000 && total<=250_000_000){"Backup exceeds safe restore size"}
                                 target.write(buffer,0,n);n=zip.read(buffer)}
                         }
                     }
                     zip.closeEntry();entry=zip.nextEntry
                 }
             }}?:error("Cannot open backup")
-            val sourceData=File(stage,"data.json");require(sourceData.isFile && sourceData.length()<5_000_000){"Backup data missing or too large"}
-            val data=JSONObject(sourceData.readText());require(data.optInt("format") in 1..2){"Unsupported backup format"}
+            val sourceData=File(stage,"data.json");require(sourceData.isFile && sourceData.length()<50_000_000){"Backup data missing or too large"}
+            val data=JSONObject(sourceData.readText());require(data.optInt("format") in 1..3){"Unsupported backup format"}
             for(k in listOf("trips","receipts","archives"))JSONArray(data.optString(k,"[]").ifBlank{"[]"})
             if(data.has(RequestWorkflow.STATE)){
                 val state=JSONObject(data.getString(RequestWorkflow.STATE));require(state.optInt("schema")==1)
@@ -84,13 +85,38 @@ object TrackerBackup {
                     val old=if(target.exists())File(rollback,folder+"/"+file.name).also{it.parentFile?.mkdirs();target.copyTo(it,true)}else null
                     installed.add(target to old);file.copyTo(target,true)
                 }
-                val prefs=context.getSharedPreferences("usage_data",Context.MODE_PRIVATE);val edit=prefs.edit()
-                (keys+listOf(RequestWorkflow.PENDING_EMAIL,"requestEmailLeftApp","pendingSignatureAction","pendingSignatureRequest","lastConfirmedEmailToken","reviewedRequestFingerprint")).forEach{edit.remove(it)}
-                prefs.all.keys.filter{it.startsWith("lastOdometer_")}.forEach{edit.remove(it)}
-                data.keys().forEach{k->if(k in keys||k.startsWith("lastOdometer_"))when(val v=data.opt(k)){
-                    is Boolean->edit.putBoolean(k,v);else->edit.putString(k,v.toString())
-                }}
-                check(edit.commit()){"Could not save restored records"}
+                val prefs=context.getSharedPreferences("usage_data",Context.MODE_PRIVATE)
+                val previousPrefs=prefs.all.toMap()
+                val db=TrackerDatabase(context)
+                val previousDatabase=db.snapshot()
+                try {
+                    val edit=prefs.edit()
+                    (keys+listOf(RequestWorkflow.PENDING_EMAIL,"requestEmailLeftApp","pendingSignatureAction",
+                        "pendingSignatureRequest","lastConfirmedEmailToken","reviewedRequestFingerprint")).forEach{edit.remove(it)}
+                    prefs.all.keys.filter{it.startsWith("lastOdometer_")}.forEach{edit.remove(it)}
+                    data.keys().forEach{k->if(k in keys||k.startsWith("lastOdometer_"))when(val v=data.opt(k)){
+                        is Boolean->edit.putBoolean(k,v)
+                        else->edit.putString(k,v.toString())
+                    }}
+                    check(edit.commit()){"Could not save restored records"}
+                    val snapshot=data.optJSONObject("databaseSnapshot") ?: JSONObject().put("schema",1)
+                    db.restoreSnapshot(snapshot)
+                    // Older backup formats have no database; rebuild the index
+                    // from their saved workflow without losing existing receipts.
+                    RequestWorkflow(context).initialize()
+                }catch(e:Exception){
+                    db.restoreSnapshot(previousDatabase)
+                    val rollbackPrefs=prefs.edit().clear()
+                    for((key,v) in previousPrefs)when(v){
+                        is String->rollbackPrefs.putString(key,v)
+                        is Boolean->rollbackPrefs.putBoolean(key,v)
+                        is Int->rollbackPrefs.putInt(key,v)
+                        is Long->rollbackPrefs.putLong(key,v)
+                        is Float->rollbackPrefs.putFloat(key,v)
+                    }
+                    rollbackPrefs.commit()
+                    throw e
+                }finally{db.close()}
             }catch(e:Exception){installed.reversed().forEach{(f,old)->if(old!=null)old.copyTo(f,true)else f.delete()};throw e}
         }finally{stage.deleteRecursively()}
     }
