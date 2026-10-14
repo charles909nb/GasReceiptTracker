@@ -118,6 +118,9 @@ class FinanceMileageTest {
             assertEquals("Search for "+term,1,FinancePackets.list(ctx,term).size)
         }
         assertTrue(FinancePackets.list(ctx,"99999").isEmpty())
+        assertEquals(1,FinancePackets.list(ctx,"2026-10-07 61.35").size)
+        assertEquals(1,FinancePackets.list(ctx,"2026-10-07 61.35 309").size)
+        assertTrue(FinancePackets.list(ctx,"2026-10-08 61.35").isEmpty())
     }
 
     @Test fun manualFinanceFollowUpStatusSurvivesSyncAndCanBeFiltered(){
