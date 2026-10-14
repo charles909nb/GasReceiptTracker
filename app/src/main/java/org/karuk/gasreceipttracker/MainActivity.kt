@@ -347,6 +347,20 @@ class MainActivity : Activity() {
         }
         label(if (java.io.File(filesDir, "Karuk_Purchase_Requisitions_Original.xls").exists())
             "Official Excel template imported" else "Official Excel template not imported")
+        action("Create and review signed Gas Excel requisition") {
+            if (receipts.length() == 0) { alert("Save a fuel receipt first"); return@action }
+            try {
+                val receipt = receipts.getJSONObject(receipts.length() - 1)
+                val signature = pref("signatureFile").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+                require(signature?.isFile == true) { "Save your signature first" }
+                val uri = OfficialPurchaseRequisition.export(this, receipt, pref("driver"), pref("cardLast4"), signature)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.ms-excel")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Review signed Gas requisition"))
+            } catch (e: Exception) { alert("Excel review failed: " + e.message) }
+        }
         action("Create signed original Excel Purchase Requisition") {
             if (receipts.length() == 0) { alert("Save a fuel receipt first"); return@action }
             try {
