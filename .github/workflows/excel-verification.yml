@@ -1,0 +1,101 @@
+name: Verify embedded Gas worksheet on Android
+on:
+  push:
+    branches: [excel-embedded-finish]
+    paths: [.github/workflows/excel-verification.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: excel-embedded-finish
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Apply checksum-verified original worksheet integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, io, pathlib, tarfile
+          paths = [
+            'app/src/main/assets/forms/Karuk_Gas_Original.xls',
+            'app/src/main/java/org/karuk/gasreceipttracker/GasFormWorkbook.java',
+            'app/src/main/java/org/karuk/gasreceipttracker/GasSheetPdf.kt',
+            'app/src/main/java/org/karuk/gasreceipttracker/OfficialPurchaseRequisition.kt',
+            'app/src/main/java/org/karuk/gasreceipttracker/ReimbursementPacket.kt',
+            'app/src/main/java/org/karuk/gasreceipttracker/PdfPreviewActivity.kt',
+            'app/src/main/java/org/karuk/gasreceipttracker/MainActivity.kt',
+            'app/src/main/AndroidManifest.xml',
+            'app/src/main/res/xml/document_paths.xml',
+            'app/src/androidTest/java/org/karuk/gasreceipttracker/OriginalGasFormTest.kt',
+            'app/build.gradle.kts', 'EXCEL_STAGE_NOTES.md']
+          raw = base64.b64decode(''.join(p.read_text().strip() for p in sorted(pathlib.Path('tools').glob('excel-stage.*.b64'))), validate=True)
+          assert hashlib.sha256(raw).hexdigest() == '0b0ee6a03a72c088a6a5e1ca927f52342efd65b109893460b6462bef43fc740e', 'Integration checksum mismatch'
+          with tarfile.open(fileobj=io.BytesIO(raw), mode='r:xz') as archive:
+              assert sorted(m.name for m in archive.getmembers()) == sorted(paths)
+              for member in archive.getmembers():
+                  assert member.isfile() and member.name in paths
+                  destination = pathlib.Path(member.name)
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  destination.write_bytes(archive.extractfile(member).read())
+          template = pathlib.Path(paths[0]).read_bytes()
+          assert hashlib.sha256(template).hexdigest() == '058c43238947d1feeff139a1b03e0aa4bfa78265e4f9aea1c1777c17ea0eefb5'
+          pathlib.Path('verified-source-paths.txt').write_text('\n'.join(paths)+'\n')
+          print('Original XLS embedded; 12 exact source files verified.')
+          PY
+          mkdir -p app/src/main/res/drawable
+          base64 -d app/icon-approved.b64 > app/src/main/res/drawable/approved_app_icon.png
+      - name: Compile app and instrumented tests
+        run: gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test original XLS and PDF workflow on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
+      - name: Commit only verified worksheet integration to development branch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Gas Receipt Tracker Build'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          while IFS= read -r path; do git add -- "$path"; done < verified-source-paths.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Embed original Gas XLS, verify signature placement and offline PDF review'
+            git push origin HEAD:excel-embedded-finish
+          fi
+      - name: Publish app, example documents and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GasReceiptTracker-Excel-Verification
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+            verification/
+            EXCEL_STAGE_NOTES.md
+          if-no-files-found: warn
+          retention-days: 14
