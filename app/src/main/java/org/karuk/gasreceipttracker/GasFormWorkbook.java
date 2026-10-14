@@ -61,7 +61,12 @@ public final class GasFormWorkbook {
             cell(s,"C14").setCellValue(card.isEmpty()?"":"pay CC "+card);
             cell(s,"B19").setCellValue(qty); numberFormat(w,cell(s,"B19"),"0.000");
             cell(s,"D19").setCellValue("Gas car "+clean(vehicle));
-            if(Double.isFinite(price)){cell(s,"K19").setCellValue(price);numberFormat(w,cell(s,"K19"),"0.000");}
+            if(Double.isFinite(price)){
+                cell(s,"K19").setCellValue(price);
+                // Retain a fourth decimal when it is printed on the fuel receipt,
+                // without changing the official form's borders or layout.
+                numberFormat(w,cell(s,"K19"),clean(unitPrice).matches(".*[.,]\\d{4}$")?"0.0000":"0.000");
+            }
             cell(s,"M19").setCellValue(cost); numberFormat(w,cell(s,"M19"),"0.00");
             // The original SUM formula remains the source of the accounting amount.
             if(cell(s,"I40").getCellType()!=CellType.FORMULA)throw new IOException("Accounting SUM formula is missing");
