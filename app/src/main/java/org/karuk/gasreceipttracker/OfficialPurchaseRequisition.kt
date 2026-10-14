@@ -42,22 +42,27 @@ object OfficialPurchaseRequisition {
                 c.setCellValue(number)
             }
             // Preserve all original cells and formatting except the specified reimbursement fields.
-            put(13, 3, driver)
-            put(14, 3, "pay CC " + cardLast4)
-            put(19, 4, "pay CC " + cardLast4)
-            numeric(25, 2, receipt.optString("gallons"))
-            put(25, 4, "Gas car " + receipt.optString("vehicle"))
-            numeric(25, 13, receipt.optString("cost"))
+            put(12, 4, driver)
+            put(13, 4, "pay CC " + cardLast4)
+            put(18, 5, "pay CC " + cardLast4)
+            numeric(24, 3, receipt.optString("gallons"))
+            put(24, 5, "Gas car " + receipt.optString("vehicle"))
+            numeric(24, 13, receipt.optString("cost"))
+            numeric(39, 10, receipt.optString("cost"))
             if (signature != null && signature.exists()) {
                 val bytes = signature.readBytes()
                 val imageIndex = book.addPicture(bytes, Workbook.PICTURE_TYPE_PNG)
                 val drawing = sheet.createDrawingPatriarch()
                 val anchor = book.creationHelper.createClientAnchor()
                 anchor.col1 = 9
-                anchor.row1 = 44
-                anchor.col2 = 14
-                anchor.row2 = 46
+                anchor.row1 = 43
+                anchor.col2 = 13
+                anchor.row2 = 45
                 drawing.createPicture(anchor, imageIndex)
+            }
+            // The output is the original Gas worksheet only; other official forms remain untouched.
+            for (index in book.numberOfSheets - 1 downTo 0) {
+                if (book.getSheetName(index) != "Gas") book.removeSheetAt(index)
             }
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, "Karuk_Gas_PR_" + System.currentTimeMillis() + ".xls")
