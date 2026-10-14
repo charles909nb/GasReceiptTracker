@@ -14,7 +14,7 @@ object MileageAnalytics {
     const val DROP_THRESHOLD=0.20
     const val HISTORY_SAMPLES=3
     data class Stop(val id:String,val vehicle:String,val date:String,val odometer:Double,
-        val gallons:Double,val fillType:String,val amount:Double)
+        val gallons:Double,val fillType:String,val amount:Double,val requestId:String="")
     data class Sample(val startDate:String,val endDate:String,val startOdometer:Double,
         val endOdometer:Double,val miles:Double,val gallons:Double,val mpg:Double,
         val baseline:Double?,val declinePercent:Double?,val maintenanceFlag:Boolean)
@@ -41,7 +41,7 @@ object MileageAnalytics {
     }
     fun load(context:Context):List<Stop> = TrackerDatabase(context).use{db->
         db.receiptSearch("",10000).mapNotNull{saved->
-            fromReceipt(saved.id,saved.payload)
+            fromReceipt(saved.id,saved.payload)?.copy(requestId=saved.requestId)
         }
     }
     fun vehicleNumbers(context:Context):List<String> =
