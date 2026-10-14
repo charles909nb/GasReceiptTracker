@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Gradle produces JUnit reports and uninstalls the test app during teardown.
-gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
+test_status=0
+gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest || test_status=$?
+# Keep failure screenshots and logs for diagnosis, including when any device test fails.
+adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification || true
+if [ "$test_status" -ne 0 ]; then exit "$test_status"; fi
 # Run again without teardown to collect real document and interface screenshots.
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
