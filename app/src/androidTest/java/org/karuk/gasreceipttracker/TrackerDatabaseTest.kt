@@ -22,7 +22,7 @@ class TrackerDatabaseTest {
             .put("station","Chevron Yreka").put("vehicle","309").put("gallons","8.765")
             .put("price","6.9993").put("cost","61.35").put("fuelType","UNLEAD REG")
             .put("ocrRawText","UNLEAD REG 8.765G\nPRICE/GAL $6.9993\nTOTAL $61.35")
-            .put("image","file:///private/receipt_123.jpg").put("receiptCardLast4","5530")
+            .put("image","file:///private/receipt_123.jpg").put("receiptCardLast4","5678")
         val trip=JSONObject().put("vehicle","309").put("startDate","October 7, 2026")
             .put("endDate","October 7, 2026").put("destination","Happy Camp").put("purpose","Elders outreach")
             .put("startOdometer","9000").put("endOdometer","9050")
@@ -43,7 +43,7 @@ class TrackerDatabaseTest {
             }
             val receipt=db.receiptSearch("Chevron").single()
             assertEquals("UNLEAD REG",receipt.fuelType)
-            assertEquals("5530",receipt.payload.optString("receiptCardLast4"))
+            assertEquals("5678",receipt.payload.optString("receiptCardLast4"))
             assertEquals("1234",workflow.current().getJSONObject("profile").getString("cardLast4"))
         }
     }
