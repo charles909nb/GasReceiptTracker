@@ -110,16 +110,24 @@ class ReceiptVerificationTest {
         b.recycle()
         return file
     }
-    private fun sampleEvidence():String =
-        ReceiptEvidence.asJson(listOf(
-            box("station","CHEVRON",.04f,.13f),
-            box("date","10/07/2026",.04f,.23f),
-            box("cardType","VISA",.04f,.33f),
-            box("cardLast4","VISA XXXX5678",.24f,.33f),
-            box("gallons","UNLEAD REG 8.765G",.42f,.45f),
-            box("price","PRICE/GAL $6.9993",.45f,.55f),
-            box("total","FUEL TOTAL $61.35",.47f,.66f)
+    private fun sampleEvidence():String {
+        val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=34f}
+        fun region(field:String,row:Int,prefix:String,matched:String,full:String):ReceiptEvidence {
+            val x=30f+paint.measureText(prefix)
+            val base=160f+row*118f
+            return ReceiptEvidence(field,full,x/720f,(base-34f)/1100f,
+                (x+paint.measureText(matched))/720f,(base+6f)/1100f)
+        }
+        return ReceiptEvidence.asJson(listOf(
+            region("station",0,"","CHEVRON","CHEVRON"),
+            region("date",1,"","10/07/2026","10/07/2026"),
+            region("cardType",2,"","VISA","VISA XXXX5678"),
+            region("cardLast4",2,"VISA XXXX","5678","VISA XXXX5678"),
+            region("gallons",3,"UNLEAD REG ","8.765G","UNLEAD REG 8.765G"),
+            region("price",4,"PRICE/GAL $","6.9993","PRICE/GAL $6.9993"),
+            region("total",5,"FUEL TOTAL $","61.35","FUEL TOTAL $61.35")
         )).toString()
+    }
     private fun seed():String {
         prefs.edit().putString("driver","Test User").putString("cardBrand","Visa")
             .putString("cardLast4","1234").putString("vehicle","309")
@@ -138,6 +146,8 @@ class ReceiptVerificationTest {
         return all(a.window.decorView).filterIsInstance<Button>().first{it.text.toString()==caption}
     }
     private fun screenshot(name:String){
+        instrumentation.waitForIdleSync()
+        Thread.sleep(650)
         instrumentation.uiAutomation.takeScreenshot()?.let{bitmap->
             val dir=context.getExternalFilesDir("verification")!!.apply{mkdirs()}
             File(dir,name+".png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
