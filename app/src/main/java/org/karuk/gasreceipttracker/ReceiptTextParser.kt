@@ -10,17 +10,17 @@ import java.util.Locale
  * includes four fractional digits. Never silently substitutes a guessed price.
  */
 object ReceiptTextParser {
-    private val normalizeSpaces = Regex("""[\\t ]+""")
-    private val quantityAfter = Regex("""(?<!\\d)(\\d{1,4}[.,]\\d{1,3})\\s*(?:GALLONS?|GALS?|GAL|G)\\b""", RegexOption.IGNORE_CASE)
-    private val quantityBefore = Regex("""\\b(?:GALLONS?|GALS?|QTY|QUANTITY|VOLUME)\\s*[:=#-]?\\s*(\\d{1,4}[.,]\\d{1,3})\\b""", RegexOption.IGNORE_CASE)
-    private val pricePerGallon = Regex("""(?:\\bPRICE\\s*(?:/|PER\\s+)\\s*GAL(?:LON)?\\b|\\bUNIT\\s*PRICE\\b|\\bP\\s*/\\s*G\\b|\\bCOST\\s*/\\s*GAL\\b)\\s*[:=$-]?\\s*\\$?\\s*(\\d{1,3}[.,]\\d{2,4})\\b""", RegexOption.IGNORE_CASE)
-    private val money = Regex("""(?<![\\d.])\\$?\\s*(\\d{1,6}[.,]\\d{2})(?!\\d)""")
-    private val date = Regex("""(?<!\\d)(\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4})(?!\\d)""")
-    private val time = Regex("""(?<!\\d)(\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:AM|PM)?)(?!\\d)""", RegexOption.IGNORE_CASE)
-    private val maskedCard = Regex("""(?:[X*#]{4,}[-\\s]*)(\\d{4})\\b""", RegexOption.IGNORE_CASE)
-    private val totalLabel = Regex("""\\b(?:FUEL\\s*TOTAL|GRAND\\s*TOTAL|TOTAL\\s*DUE|AMOUNT\\s*DUE|TOTAL|SALE\\s*AMOUNT)\\b""", RegexOption.IGNORE_CASE)
-    private val creditLabel = Regex("""\\b(?:CREDIT|CHARGE|VISA|MASTERCARD)\\b""", RegexOption.IGNORE_CASE)
-    private val fuelType = Regex("""\\b(?:UNLEAD\\s*REG|REGULAR\s*UNLEADED|UNLEADED|PREMIUM|DIESEL|MIDGRADE)\\b""", RegexOption.IGNORE_CASE)
+    private val normalizeSpaces = Regex("""[\t ]+""")
+    private val quantityAfter = Regex("""(?<!\d)(\d{1,4}[.,]\d{1,3})\s*(?:GALLONS?|GALS?|GAL|G)\b""", RegexOption.IGNORE_CASE)
+    private val quantityBefore = Regex("""\b(?:GALLONS?|GALS?|QTY|QUANTITY|VOLUME)\s*[:=#-]?\s*(\d{1,4}[.,]\d{1,3})\b""", RegexOption.IGNORE_CASE)
+    private val pricePerGallon = Regex("""(?:\bPRICE\s*(?:/|PER\s+)\s*GAL(?:LON)?\b|\bUNIT\s*PRICE\b|\bP\s*/\s*G\b|\bCOST\s*/\s*GAL\b)\s*[:=$-]?\s*\$?\s*(\d{1,3}[.,]\d{2,4})\b""", RegexOption.IGNORE_CASE)
+    private val money = Regex("""(?<![\d.])\$?\s*(\d{1,6}[.,]\d{2})(?!\d)""")
+    private val date = Regex("""(?<!\d)(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})(?!\d)""")
+    private val time = Regex("""(?<!\d)(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)(?!\d)""", RegexOption.IGNORE_CASE)
+    private val maskedCard = Regex("""(?:[X*#]{4,}[-\s]*)(\d{4})\b""", RegexOption.IGNORE_CASE)
+    private val totalLabel = Regex("""\b(?:FUEL\s*TOTAL|GRAND\s*TOTAL|TOTAL\s*DUE|AMOUNT\s*DUE|TOTAL|SALE\s*AMOUNT)\b""", RegexOption.IGNORE_CASE)
+    private val creditLabel = Regex("""\b(?:CREDIT|CHARGE|VISA|MASTERCARD)\b""", RegexOption.IGNORE_CASE)
+    private val fuelType = Regex("""\b(?:UNLEAD\s*REG|REGULAR\s*UNLEADED|UNLEADED|PREMIUM|DIESEL|MIDGRADE)\b""", RegexOption.IGNORE_CASE)
 
     private fun cleanNumber(s: String) = s.trim().replace(',', '.')
     private fun lines(s: String) = s.lineSequence().map { it.trim().replace(normalizeSpaces, " ") }
@@ -45,10 +45,10 @@ object ReceiptTextParser {
         val price = pricePerGallon.find(flat)?.groupValues?.get(1).orEmpty().let(::cleanNumber)
         val total = amountNear(rows, totalLabel).ifBlank { amountNear(rows, creditLabel) }
         val vendor = when {
-            Regex("""\\bCHEVR(?:ON)?\\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Chevron"
-            Regex("""\\bSHELL\\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Shell"
-            Regex("""\\bARCO\\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "ARCO"
-            Regex("""\\bCOSTCO\\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Costco"
+            Regex("""\bCHEVR(?:ON)?\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Chevron"
+            Regex("""\bSHELL\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Shell"
+            Regex("""\bARCO\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "ARCO"
+            Regex("""\bCOSTCO\b""", RegexOption.IGNORE_CASE).containsMatchIn(flat) -> "Costco"
             else -> rows.take(7).firstOrNull {
                 it.any(Char::isLetter) && !Regex("""RECEIPT|WELCOME|THANK|INVOICE|AUTH|CUSTOMER|COPY""", RegexOption.IGNORE_CASE).containsMatchIn(it)
             }.orEmpty()
