@@ -590,10 +590,67 @@ class MainActivity : Activity() {
             try{workflow.create(title.text.toString(),kind.selectedItem.toString(),!queue);dialog.dismiss();show(if(queue)"requests"else "home")}catch(e:Exception){title.error=e.message}
         }};dialog.show()
     }
+    private fun receiptHistory(){
+        draw("Saved fuel receipts")
+        label("Search locally saved receipts by station, purchase date, vehicle, amount, or request.",14f)
+        val query=edit("Search receipts (blank shows all)")
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        body.addView(results)
+        fun refresh(){
+            results.removeAllViews()
+            try{
+                val matches=TrackerDatabase(this).use{it.receiptSearch(query.text.toString())}
+                if(matches.isEmpty()){
+                    results.addView(TrackerStyle.text(this,"No matching receipts. Saving a fuel purchase makes it searchable here.",14f))
+                }else{
+                    results.addView(TrackerStyle.text(this,matches.size.toString()+" matching receipt(s), saved on this phone",13f,false,TrackerStyle.muted))
+                    for(r in matches){
+                        results.addView(TrackerStyle.card(this,
+                            r.station.ifBlank{"Fuel receipt"}+"  /  $"+r.total,
+                            r.date+"  |  Vehicle "+r.vehicle+"  |  "+r.gallons+" gal\n"+r.reference+"  /  "+r.requestTitle))
+                        results.addView(TrackerStyle.button(this,"Review saved receipt") {
+                            android.app.AlertDialog.Builder(this).setTitle(r.station+" - "+r.date)
+                                .setMessage("Request: "+r.reference+"\nVehicle: "+r.vehicle+
+                                    "\nGallons: "+r.gallons+"\nPrice per gallon: $"+r.price+
+                                    "\nPaid total: $"+r.total+"\nFuel type: "+r.fuelType+
+                                    "\nOriginal photo and corrected fields remain saved offline.")
+                                .setPositiveButton("View original photo"){_,_->
+                                    try{
+                                        val stored=Uri.parse(r.imageUri)
+                                        val viewUri=if(stored.scheme=="file"){
+                                            val source=java.io.File(requireNotNull(stored.path))
+                                            val dest=java.io.File(filesDir,"exports/"+source.name).apply{parentFile?.mkdirs()}
+                                            source.copyTo(dest,true)
+                                            OfficialPurchaseRequisition.uri(this,dest)
+                                        }else stored
+                                        startActivity(Intent(Intent.ACTION_VIEW)
+                                            .setDataAndType(viewUri,"image/*")
+                                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                    }catch(e:Exception){alert("Receipt photo unavailable: "+e.message)}
+                                }.setNeutralButton("Read OCR text"){_,_->
+                                    android.app.AlertDialog.Builder(this).setTitle("Saved OCR text")
+                                        .setMessage(r.rawText.ifBlank{"No OCR text was saved for this receipt."})
+                                        .setPositiveButton("Close",null).show()
+                                }.setNegativeButton("Done",null).show()
+                        })
+                    }
+                }
+            }catch(e:Exception){
+                results.addView(TrackerStyle.text(this,"Search failed: "+e.message,14f))
+            }
+        }
+        query.addTextChangedListener(object:TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){refresh()}
+            override fun afterTextChanged(s:Editable?){}
+        })
+        refresh()
+    }
     private fun requestList(){
         draw("Requests & history")
         if(workflow.pendingEmail()!=null)action("Confirm whether the last email was sent"){offerEmailConfirmation(true)}
         action("New travel / PR"){newRequestDialog(false)};action("Queue travel or work order"){newRequestDialog(true)}
+        action("Search saved fuel receipts"){show("history")}
         val all=workflow.all();val activeId=workflow.current().getString("id");label("Open requests",20f)
         for(i in 0 until all.length()){
             val r=all.getJSONObject(i);if(r.optString("status")!="draft")continue
