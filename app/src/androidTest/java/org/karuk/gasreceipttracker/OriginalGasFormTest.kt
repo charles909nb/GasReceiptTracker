@@ -50,7 +50,9 @@ class OriginalGasFormTest {
         assertTrue(files.excel.isFile);assertTrue(files.pdf.isFile)
         HSSFWorkbook(files.excel.inputStream()).use{w->
             val s=w.getSheet("Gas")
-            assertEquals("October 8, 2026",s.getRow(6).getCell(2).stringCellValue)
+            val today = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("MMMM d, uuuu", java.util.Locale.US))
+            assertEquals("Requisition should be dated today, not October 8 receipt date",today,s.getRow(6).getCell(2).stringCellValue)
             assertEquals("Sample Driver",s.getRow(12).getCell(2).stringCellValue)
             assertEquals("pay CC 1234",s.getRow(13).getCell(2).stringCellValue)
             assertEquals(8.765,s.getRow(18).getCell(1).numericCellValue,.000001)
@@ -81,6 +83,9 @@ class OriginalGasFormTest {
         val changed=receipt().put("cost","22.22").put("gallons","4.321").put("vehicle","310")
         val files=OfficialPurchaseRequisition.prepare(context,changed,"Another Driver","4321",signature())
         HSSFWorkbook(files.excel.inputStream()).use{w->val s=w.getSheet("Gas")
+            assertEquals(java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("MMMM d, uuuu", java.util.Locale.US)),
+                s.getRow(6).getCell(2).stringCellValue)
             assertEquals("Another Driver",s.getRow(12).getCell(2).stringCellValue)
             assertEquals("Gas car 310",s.getRow(18).getCell(3).stringCellValue)
             assertEquals(22.22,s.getRow(39).getCell(8).numericCellValue,.000001)
