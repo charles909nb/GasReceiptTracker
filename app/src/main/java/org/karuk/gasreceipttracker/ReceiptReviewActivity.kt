@@ -256,7 +256,7 @@ class ReceiptReviewActivity:Activity() {
         val editor=prefs.edit()
         for(field in fields)editor.putString(field.pref,values[field.key].orEmpty().trim())
         editor.putString("ocr_card_verification",if(card.mismatch)"MISMATCH_ACKNOWLEDGED"else card.status)
-            .putBoolean("ocr_card_mismatch_ack",card.mismatch&&acknowledgement.isChecked)
+            .putString("ocr_card_mismatch_ack",(card.mismatch&&acknowledgement.isChecked).toString())
             .putString("ocr_profile_card_last4_at_review",pref("cardLast4"))
             .putString("ocr_profile_card_brand_at_review",pref("cardBrand"))
             .putString("ocr_reviewed_at",timestamp())
