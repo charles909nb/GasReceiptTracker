@@ -29,11 +29,12 @@ class PdfPreviewActivity : Activity() {
             view.setPadding(margin+bars.left,margin+bars.top,margin+bars.right,margin+bars.bottom)
             insets
         }
-        val title=TextView(this).apply{text="Review PDF - not sent";textSize=20f};root.addView(title)
+        val title=TrackerStyle.text(this,"Review PDF - not sent",20f,true,TrackerStyle.red);root.addView(title)
         status=TextView(this).apply{text="Opening document..."};root.addView(status)
+        root.setBackgroundColor(TrackerStyle.background)
         val controls=LinearLayout(this)
-        fun button(name:String,action:()->Unit){controls.addView(Button(this).apply{text=name;setOnClickListener{action()}},LinearLayout.LayoutParams(0,-2,1f))}
-        button("Back"){finish()};button("Previous"){if(index>0){index--;render()}}
+        fun button(name:String,action:()->Unit){controls.addView(TrackerStyle.button(this,name,false,action).apply{textSize=12f;setPadding(4,4,4,4)},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(2,4,2,4)})}
+        button("Done"){setResult(RESULT_OK);finish()};button("Previous"){if(index>0){index--;render()}}
         button("Next"){val n=renderer?.pageCount?:0;if(index+1<n){index++;render()}}
         button("Zoom"){zoom=if(zoom==1f)1.6f else 1f;render()}
         root.addView(controls)
