@@ -283,13 +283,22 @@ class MainActivity : Activity() {
             if(selected.isBlank()||date.text.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")||od==null||!od.isFinite()||od<0||gal==null||!gal.isFinite()||gal<=0||total==null||!total.isFinite()||total<=0){
                 alert("Attach receipt and enter printed receipt date, vehicle, odometer, gallons and total.");return@action
             }
-            receipts.put(JSONObject().put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
+            receipts.put(JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("savedAt",now)
+                .put("fuelType",pref("ocr_fuel_type")).put("receiptCardLast4",pref("ocr_card_last4"))
+                .put("receiptTime",pref("ocr_time")).put("ocrRawText",pref("ocr_raw"))
+                .put("ocrWarnings",pref("ocr_warn"))
+                .put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
                 .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",pref("cardLast4"))
                 .put("gallons",gallons.text.toString()).put("price",price.text.toString()).put("cost",cost.text.toString()).put("image",selected))
             store("receipts",receipts)
             prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total")
-                .remove("draftOdometer").putString("vehicle",vehicle.selectedItem.toString()).putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString()).commit()
-            workflow.sync();alert("Receipt saved to "+workflow.current().getString("reference"));show("sheets")
+                .remove("draftOdometer").remove("ocr_raw").remove("ocr_fuel_type").remove("ocr_card_last4")
+                .remove("ocr_time").remove("ocr_warn").putString("vehicle",vehicle.selectedItem.toString()).putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString()).commit()
+            workflow.sync()
+            TrackerDatabase(this).use { it.log(workflow.current().getString("id"), "fuel_receipt_saved",
+                date.text.toString()+" / $"+cost.text.toString()+" / vehicle "+vehicle.selectedItem.toString()) }
+            alert("Receipt saved for later retrieval: "+workflow.current().getString("reference"))
+            show("sheets")
         }
         label("Saved receipts ("+receipts.length()+")",20f)
         for(i in receipts.length()-1 downTo 0){
@@ -342,13 +351,22 @@ class MainActivity : Activity() {
                 val target=java.io.File(filesDir,"receipt_"+System.currentTimeMillis()+".jpg")
                 contentResolver.openInputStream(uri).use{input->requireNotNull(input){"Receipt image cannot be opened"};target.outputStream().use{input.copyTo(it)}}
                 val saved=Uri.fromFile(target)
-                prefs.edit().putString("pending_receipt",saved.toString()).remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").commit()
+                prefs.edit().putString("pending_receipt",saved.toString())
+                    .remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price")
+                    .remove("ocr_total").remove("ocr_raw").remove("ocr_fuel_type").remove("ocr_card_last4")
+                    .remove("ocr_time").remove("ocr_warn").commit()
                 workflow.sync()
                 ReceiptReader.scan(this,saved){scan->runOnUiThread{
                     if(workflow.current().getString("id")!=requestId)return@runOnUiThread
                     if(scan!=null)prefs.edit().putString("ocr_station",scan.station).putString("ocr_date",scan.date).putString("ocr_gallons",scan.gallons)
-                        .putString("ocr_price",scan.price).putString("ocr_total",scan.total).commit()
-                    workflow.sync();show("fuel");alert(if(scan==null)"Receipt scan failed; enter details manually"else "Receipt scanned; please verify values")
+                        .putString("ocr_price",scan.price).putString("ocr_total",scan.total)
+                        .putString("ocr_raw",scan.rawText.take(35000)).putString("ocr_fuel_type",scan.fuelType)
+                        .putString("ocr_card_last4",scan.cardLast4).putString("ocr_time",scan.time)
+                        .putString("ocr_warn",scan.warnings.joinToString("; ")).commit()
+                    workflow.sync();show("fuel")
+                    alert(if(scan==null)"OCR could not read the receipt; enter details manually"
+                          else if(scan.warnings.isNotEmpty())"OCR needs review: "+scan.warnings.joinToString("; ")
+                          else "Found "+scan.gallons+" gallons, $"+scan.price+"/gal, total $"+scan.total)
                 }}
             }catch(e:Exception){alert("Could not save receipt: "+e.message)}
         }
