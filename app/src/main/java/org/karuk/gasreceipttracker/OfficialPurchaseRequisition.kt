@@ -38,7 +38,9 @@ object OfficialPurchaseRequisition {
         val sig=signature(signatureFile)
         val template=context.assets.open(GasFormWorkbook.ASSET).use { it.readBytes() }
         require(digest(template)==GasFormWorkbook.TEMPLATE_SHA256){"The built-in official worksheet is damaged"}
-        val bytes=GasFormWorkbook.fill(template.inputStream(),receipt.optString("date"),
+        // Requisition issue date is the device's current local calendar date, not the purchase date.
+        val requisitionDate = java.time.LocalDate.now(java.time.ZoneId.systemDefault()).toString()
+        val bytes=GasFormWorkbook.fill(template.inputStream(),requisitionDate,
             receipt.optString("driver").ifBlank{driver},receipt.optString("cardLast4").ifBlank{card},
             receipt.optString("vehicle"),receipt.optString("gallons"),receipt.optString("price"),receipt.optString("cost"),sig.first,sig.second,sig.third)
         val directory=File(context.filesDir,"exports").apply { mkdirs() }
