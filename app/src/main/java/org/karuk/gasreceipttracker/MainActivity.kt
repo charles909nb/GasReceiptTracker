@@ -270,6 +270,11 @@ class MainActivity : Activity() {
         label("The original receipt date stays with the purchase. The PR will use today\u0027s date when generated.",14f)
         label("Entries are saved automatically as you type.",14f)
         if(pref("ocr_warn").isNotBlank())label("Check OCR: "+pref("ocr_warn"),14f)
+        if(pref("ocr_card_last4").isNotBlank()||pref("ocr_card_type").isNotBlank()){
+            val cardCheck=ReceiptCardVerifier.verify(pref("cardLast4"),pref("cardBrand"),
+                pref("ocr_card_last4"),pref("ocr_card_type"))
+            label((if(cardCheck.mismatch)"CARD MISMATCH: "else "Receipt payment: ")+cardCheck.message,14f)
+        }
         label(if(pref("pending_receipt").isBlank())"No receipt image attached" else "Receipt image attached")
         label("After scanning, the receipt opens with highlighted numbers. Tap one or step through each field to correct it.",14f)
         if(pref("pending_receipt").isNotBlank())
@@ -318,17 +323,35 @@ class MainActivity : Activity() {
             if(selected.isBlank()||date.text.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")||od==null||!od.isFinite()||od<0||gal==null||!gal.isFinite()||gal<=0||total==null||!total.isFinite()||total<=0){
                 alert("Attach receipt and enter printed receipt date, vehicle, odometer, gallons and total.");return@action
             }
+            val check=ReceiptCardVerifier.verify(pref("cardLast4"),pref("cardBrand"),
+                pref("ocr_card_last4"),pref("ocr_card_type"))
+            if(check.mismatch&&pref("ocr_card_mismatch_ack")!="true"){
+                alert("Card mismatch. Check the highlighted card number before saving.")
+                checkReceipt();return@action
+            }
+            val actualCard=ReceiptPrivacy.last4(pref("ocr_card_last4")).ifBlank{pref("cardLast4")}
+            val checkStatus=if(check.mismatch)"MISMATCH_ACKNOWLEDGED"else check.status
             receipts.put(JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("savedAt",now)
                 .put("fuelType",pref("ocr_fuel_type")).put("receiptCardLast4",pref("ocr_card_last4"))
+                .put("cardType",ReceiptPrivacy.brand(pref("ocr_card_type")))
+                .put("cardVerificationStatus",checkStatus)
+                .put("cardMismatchAcknowledged",check.mismatch&&pref("ocr_card_mismatch_ack")=="true")
+                .put("profileCardLast4AtReview",pref("ocr_profile_card_last4_at_review").ifBlank{pref("cardLast4")})
+                .put("profileCardBrandAtReview",pref("ocr_profile_card_brand_at_review").ifBlank{pref("cardBrand")})
+                .put("reviewedAt",pref("ocr_reviewed_at"))
+                .put("ocrEvidence",JSONArray(pref("ocr_evidence").ifBlank{"[]"}))
+                .put("ocrCorrections",JSONArray(pref("ocr_corrections").ifBlank{"[]"}))
                 .put("receiptTime",pref("ocr_time")).put("ocrRawText",pref("ocr_raw"))
                 .put("ocrWarnings",pref("ocr_warn"))
                 .put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
-                .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",pref("cardLast4"))
+                .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",actualCard)
                 .put("gallons",gallons.text.toString()).put("price",price.text.toString()).put("cost",cost.text.toString()).put("image",selected))
             store("receipts",receipts)
-            prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total")
-                .remove("draftOdometer").remove("ocr_raw").remove("ocr_fuel_type").remove("ocr_card_last4")
-                .remove("ocr_time").remove("ocr_warn").putString("vehicle",vehicle.selectedItem.toString()).putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString()).commit()
+            val clearing=prefs.edit().remove("pending_receipt").remove("draftOdometer")
+                .putString("vehicle",vehicle.selectedItem.toString())
+                .putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString())
+            RequestWorkflow.DRAFT_KEYS.filter{it.startsWith("ocr_")}.forEach{clearing.remove(it)}
+            check(clearing.commit()){"Could not clear saved receipt draft"}
             workflow.sync()
             TrackerDatabase(this).use { it.log(workflow.current().getString("id"), "fuel_receipt_saved",
                 date.text.toString()+" / $"+cost.text.toString()+" / vehicle "+vehicle.selectedItem.toString()) }
