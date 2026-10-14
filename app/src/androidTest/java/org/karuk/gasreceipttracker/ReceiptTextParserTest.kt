@@ -33,6 +33,7 @@ class ReceiptTextParserTest {
         assertEquals("6.9993",result.price)
         assertEquals("61.35",result.total)
         assertEquals("5678",result.cardLast4)
+        assertEquals("Visa",result.cardType)
         assertEquals("UNLEAD REG",result.fuelType)
         assertTrue(result.warnings.toString(),result.warnings.isEmpty())
     }
@@ -68,6 +69,14 @@ class ReceiptTextParserTest {
         val result=ReceiptTextParser.parse("GALLONS 8.765\nPRICE/GAL 6.9993\nTOTAL $71.35")
         assertEquals("71.35",result.total)
         assertTrue(result.warnings.any{it.contains("differs")})
+    }
+    @Test fun extractsMastercardAndAmexWithMaskedCardSuffix() {
+        val mastercard=ReceiptTextParser.parse("MASTERCARD\nXXXXXXXXXXXX9012\nTOTAL $20.00")
+        assertEquals("Mastercard",mastercard.cardType)
+        assertEquals("9012",mastercard.cardLast4)
+        val amex=ReceiptTextParser.parse("AMERICAN EXPRESS\nXXXX1234\nTOTAL $20.00")
+        assertEquals("American Express",amex.cardType)
+        assertEquals("1234",amex.cardLast4)
     }
     @Test fun emptyOCRMustNotInventReceiptNumbers() {
         val result=ReceiptTextParser.parse("CUSTOMER COPY")
