@@ -175,8 +175,12 @@ object FinancePackets {
                 "amount_cents,vehicle,station,sent_at,sent_epoch,recipient,cc,subject,pdf_uri,"+
                 "sha256,pdf_bytes,finance_status,notes,updated_epoch FROM finance_packets WHERE 1=1")
             val args=mutableListOf<String>()
-            if(query.isNotBlank()){
-                val raw=query.trim().removePrefix("$")
+            // Each search term can match a different field: a user can enter
+            // "2026-10-07 61.35" to find purchases on a date for that amount.
+            val searchTerms=query.trim().split(Regex("""\s+"""))
+                .filter{it.isNotBlank()}.take(8)
+            for(rawTerm in searchTerms){
+                val raw=rawTerm.removePrefix("$").replace(",","")
                 val term="%"+raw.replace("!","!!").replace("%","!%").replace("_","!_")+"%"
                 sql.append(" AND (reference LIKE ? ESCAPE '!' OR title LIKE ? ESCAPE '!'"+
                     " OR pr_date LIKE ? ESCAPE '!' OR receipt_date LIKE ? ESCAPE '!'"+
