@@ -26,17 +26,18 @@ class SignaturePad(context: Context) : View(context) {
     }
     init { setBackgroundColor(Color.WHITE); minimumHeight = 240 }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), 260)
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (190 * resources.displayMetrics.density).toInt())
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { current = Path().also { it.moveTo(event.x, event.y); strokes.add(it) }; invalidate(); return true }
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); current = Path().also { it.moveTo(event.x, event.y); strokes.add(it) }; invalidate(); return true }
             MotionEvent.ACTION_MOVE -> { current?.lineTo(event.x, event.y); invalidate(); return true }
-            MotionEvent.ACTION_UP -> { current?.lineTo(event.x, event.y); current = null; invalidate(); return true }
+            MotionEvent.ACTION_UP -> { parent?.requestDisallowInterceptTouchEvent(false); performClick(); current?.lineTo(event.x, event.y); current = null; invalidate(); return true }
         }
         return true
     }
     override fun onDraw(canvas: Canvas) { super.onDraw(canvas); strokes.forEach { canvas.drawPath(it, ink) } }
+    override fun performClick():Boolean { super.performClick(); return true }
     fun clear() { strokes.clear(); invalidate() }
     fun hasSignature() = strokes.isNotEmpty()
     fun save(context: Context): File {
@@ -79,8 +80,7 @@ object ReceiptReader {
                     line.any { it.isLetter() } && !line.contains("RECEIPT", true) &&
                     !line.contains("WELCOME", true) && !line.contains("THANK", true)
                 }.orEmpty()
-                done(FuelScan(station, date.find(result.text)?.value.orEmpty(),
-                    qty, unitPrice, total, result.text))
+                done(FuelScan(station, date.find(result.text)?.value.orEmpty(), qty, unitPrice, total, result.text))
                 recognizer.close()
             }.addOnFailureListener { recognizer.close(); done(null) }
         } catch (_: Exception) { done(null) }
