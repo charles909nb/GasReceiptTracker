@@ -1,0 +1,67 @@
+package org.karuk.gasreceipttracker
+
+import android.app.Activity
+import android.os.Bundle
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.widget.*
+import java.util.concurrent.Executors
+
+/** Offline, in-app review. It never opens email or transmits a document. */
+class PdfPreviewActivity : Activity() {
+    private val worker=Executors.newSingleThreadExecutor()
+    private var renderer:PdfRenderer?=null
+    private lateinit var image:ImageView
+    private lateinit var status:TextView
+    private var bitmap:Bitmap?=null
+    private var index=0
+    private var zoom=1f
+    @Volatile private var closing=false
+    override fun onCreate(savedInstanceState:Bundle?){
+        super.onCreate(savedInstanceState)
+        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(12,36,12,12)}
+        val title=TextView(this).apply{text="Review PDF - not sent";textSize=20f};root.addView(title)
+        status=TextView(this).apply{text="Opening document..."};root.addView(status)
+        val controls=LinearLayout(this)
+        fun button(name:String,action:()->Unit){controls.addView(Button(this).apply{text=name;setOnClickListener{action()}},LinearLayout.LayoutParams(0,-2,1f))}
+        button("Back"){finish()};button("Previous"){if(index>0){index--;render()}}
+        button("Next"){val n=renderer?.pageCount?:0;if(index+1<n){index++;render()}}
+        button("Zoom"){zoom=if(zoom==1f)1.6f else 1f;render()}
+        root.addView(controls)
+        image=ImageView(this).apply{setBackgroundColor(Color.WHITE);adjustViewBounds=true}
+        val vertical=ScrollView(this);val horizontal=HorizontalScrollView(this)
+        horizontal.addView(image);vertical.addView(horizontal);root.addView(vertical,LinearLayout.LayoutParams(-1,0,1f))
+        setContentView(root)
+        val uri=intent.data
+        if(uri==null){status.text="No PDF was selected";return}
+        worker.execute{
+            try{
+                val fd=contentResolver.openFileDescriptor(uri,"r")?:error("Cannot open PDF")
+                renderer=try{PdfRenderer(fd)}catch(e:Exception){fd.close();throw e}
+                runOnUiThread{if(!closing)render()}
+            }catch(e:Exception){runOnUiThread{status.text="Preview could not open: "+e.message}}
+        }
+    }
+    private fun render(){
+        if(closing)return
+        val selected=index;val requestedZoom=zoom
+        worker.execute{
+            if(closing)return@execute
+            try{
+                val pdf=renderer?:return@execute
+                val new=pdf.openPage(selected).use { page ->
+                    val width=(resources.displayMetrics.widthPixels*requestedZoom).toInt().coerceIn(400,1600)
+                    val height=(width.toFloat()*page.height/page.width).toInt().coerceAtMost(2400)
+                    Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888).also{it.eraseColor(Color.WHITE);page.render(it,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)}
+                }
+                runOnUiThread{
+                    if(closing){new.recycle();return@runOnUiThread}
+                    val old=bitmap;bitmap=new;image.setImageBitmap(new);old?.recycle()
+                    status.text="Page ${selected+1} of ${pdf.pageCount} - review before emailing"
+                }
+            }catch(e:Exception){runOnUiThread{if(!closing)status.text="Preview failed: "+e.message}}
+        }
+    }
+    override fun onDestroy(){closing=true;worker.execute{renderer?.close();renderer=null};worker.shutdown();image.setImageDrawable(null);bitmap?.recycle();super.onDestroy()}
+}

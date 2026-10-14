@@ -1,81 +1,61 @@
 package org.karuk.gasreceipttracker
 
 import android.content.Context
-import android.content.ContentValues
-import android.provider.MediaStore
-import android.os.Build
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
-import org.apache.poi.hssf.usermodel.HSSFWorkbook
-import org.apache.poi.ss.usermodel.ClientAnchor
-import org.apache.poi.ss.usermodel.Workbook
+import androidx.core.content.FileProvider
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.security.MessageDigest
 
-/** Edits the actual Karuk Tribe .xls template, preserving its sheet layout. */
+/** Always uses the bundled original Gas worksheet. No user import is needed. */
 object OfficialPurchaseRequisition {
-    fun saveTemplate(context: Context, source: Uri): File {
-        val target = File(context.filesDir, "Karuk_Purchase_Requisitions_Original.xls")
-        context.contentResolver.openInputStream(source).use { input ->
-            requireNotNull(input) { "Cannot open selected template" }
-            target.outputStream().use { input.copyTo(it) }
+    data class Prepared(val excel: File, val pdf: File, val signed: Boolean)
+    fun hasTemplate(context: Context): Boolean = runCatching {
+        context.assets.open(GasFormWorkbook.ASSET).use { it.read() >= 0 }
+    }.getOrDefault(false)
+    fun uri(context: Context, file: File): Uri = FileProvider.getUriForFile(context, context.packageName+".documents",file)
+    private fun digest(value: ByteArray)=MessageDigest.getInstance("SHA-256").digest(value).joinToString(""){"%02x".format(it)}
+    private fun signature(file: File?): Triple<ByteArray?,Int,Int> {
+        if(file==null || !file.isFile) return Triple(null,0,0)
+        val source=BitmapFactory.decodeFile(file.absolutePath) ?: error("Saved signature cannot be read; sign again")
+        var l=source.width;var t=source.height;var r=-1;var b=-1
+        for(y in 0 until source.height)for(x in 0 until source.width){
+            val p=source.getPixel(x,y)
+            if(android.graphics.Color.alpha(p)>32 && (p and 0x00ffffff)<0x00eeeeee){l=minOf(l,x);r=maxOf(r,x);t=minOf(t,y);b=maxOf(b,y)}
         }
-        FileInputStream(target).use { HSSFWorkbook(it).close() }
-        return target
+        require(r>l && b>t){"Signature is blank; please sign again"}
+        l=maxOf(0,l-3);t=maxOf(0,t-3);r=minOf(source.width-1,r+3);b=minOf(source.height-1,b+3)
+        val trimmed=Bitmap.createBitmap(source,l,t,r-l+1,b-t+1)
+        val stream=ByteArrayOutputStream();trimmed.compress(Bitmap.CompressFormat.PNG,100,stream)
+        val result=Triple(stream.toByteArray(),trimmed.width,trimmed.height)
+        if(trimmed !== source)trimmed.recycle();source.recycle();return result
     }
-    fun export(context: Context, receipt: JSONObject, driver: String, cardLast4: String, signature: File?): Uri {
-        val original = File(context.filesDir, "Karuk_Purchase_Requisitions_Original.xls")
-        require(original.exists()) { "Import the official purchase requisition template first" }
-        val book = FileInputStream(original).use { HSSFWorkbook(it) }
-        try {
-            val sheet = book.getSheet("Gas") ?: throw IllegalStateException("Original workbook is missing Gas sheet")
-            fun put(row: Int, col: Int, value: String) {
-                val r = sheet.getRow(row - 1) ?: sheet.createRow(row - 1)
-                val c = r.getCell(col - 1) ?: r.createCell(col - 1)
-                c.setCellValue(value)
-            }
-            fun numeric(row: Int, col: Int, value: String) {
-                val number = value.replace(",", "").replace("$", "").toDoubleOrNull()
-                    ?: throw IllegalArgumentException("Invalid number: " + value)
-                val r = sheet.getRow(row - 1) ?: sheet.createRow(row - 1)
-                val c = r.getCell(col - 1) ?: r.createCell(col - 1)
-                c.setCellValue(number)
-            }
-            // Preserve all original cells and formatting except the specified reimbursement fields.
-            put(12, 4, driver)
-            put(13, 4, "pay CC " + cardLast4)
-            put(18, 5, "pay CC " + cardLast4)
-            numeric(24, 3, receipt.optString("gallons"))
-            put(24, 5, "Gas car " + receipt.optString("vehicle"))
-            numeric(24, 13, receipt.optString("cost"))
-            numeric(39, 10, receipt.optString("cost"))
-            if (signature != null && signature.exists()) {
-                val bytes = signature.readBytes()
-                val imageIndex = book.addPicture(bytes, Workbook.PICTURE_TYPE_PNG)
-                val drawing = sheet.createDrawingPatriarch()
-                val anchor = book.creationHelper.createClientAnchor()
-                anchor.col1 = 9
-                anchor.row1 = 43
-                anchor.col2 = 13
-                anchor.row2 = 45
-                drawing.createPicture(anchor, imageIndex)
-            }
-            // The output is the original Gas worksheet only; other official forms remain untouched.
-            for (index in book.numberOfSheets - 1 downTo 0) {
-                if (book.getSheetName(index) != "Gas") book.removeSheetAt(index)
-            }
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, "Karuk_Gas_PR_" + System.currentTimeMillis() + ".xls")
-                put(MediaStore.Downloads.MIME_TYPE, "application/vnd.ms-excel")
-                if (Build.VERSION.SDK_INT >= 29) put(MediaStore.Downloads.RELATIVE_PATH, "Download/GasReceiptTracker")
-            }
-            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: throw IllegalStateException("Cannot create workbook")
-            context.contentResolver.openOutputStream(uri).use { out ->
-                requireNotNull(out) { "Cannot write workbook" }
-                book.write(out)
-            }
-            return uri
-        } finally { book.close() }
+    fun prepare(context: Context, receipt: JSONObject, driver: String, card: String, signatureFile: File?): Prepared {
+        val sig=signature(signatureFile)
+        val template=context.assets.open(GasFormWorkbook.ASSET).use { it.readBytes() }
+        require(digest(template)==GasFormWorkbook.TEMPLATE_SHA256){"The built-in official worksheet is damaged"}
+        val bytes=GasFormWorkbook.fill(template.inputStream(),receipt.optString("date"),
+            receipt.optString("driver").ifBlank{driver},receipt.optString("cardLast4").ifBlank{card},
+            receipt.optString("vehicle"),receipt.optString("gallons"),receipt.optString("price"),receipt.optString("cost"),sig.first,sig.second,sig.third)
+        val directory=File(context.filesDir,"exports").apply { mkdirs() }
+        val key=digest(bytes).take(24)
+        val excel=File(directory,"Karuk_Gas_$key.xls");val pdf=File(directory,"Karuk_Gas_$key.pdf")
+        if(!excel.isFile){
+            val part=File(directory,excel.name+".part")
+            FileOutputStream(part).use{it.write(bytes);it.fd.sync()}
+            check(part.renameTo(excel)){"Could not save the Excel requisition"}
+        }
+        if(!pdf.isFile){
+            val part=File(directory,pdf.name+".part")
+            try{GasSheetPdf.write(bytes,part);check(part.renameTo(pdf)){"Could not save PDF preview"}}
+            catch(e:Exception){part.delete();throw e}
+        }
+        return Prepared(excel,pdf,sig.first!=null)
     }
+    fun export(context: Context, receipt: JSONObject, driver: String, cardLast4: String, signature: File?): Uri =
+        uri(context,prepare(context,receipt,driver,cardLast4,signature).excel)
 }

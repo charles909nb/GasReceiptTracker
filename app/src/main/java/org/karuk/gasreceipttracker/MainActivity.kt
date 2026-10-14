@@ -49,7 +49,7 @@ class MainActivity : Activity() {
     private fun draw(title: String) {
         val scroll = ScrollView(this); body = LinearLayout(this); body.orientation = LinearLayout.VERTICAL
         body.setPadding(22, 16, 22, 24); scroll.addView(body); setContentView(scroll)
-        label("Gas Receipt Tracker - v1.6", 23f)
+        label("Gas Receipt Tracker - v1.8 Excel", 23f)
         val nav = LinearLayout(this); nav.orientation = LinearLayout.HORIZONTAL
         for ((caption, dest) in listOf("Trips" to "home", "Fuel" to "fuel", "Sheets" to "sheets", "Email" to "email", "Sign" to "sign", "Backup" to "backup")) {
             val b = Button(this); b.text = caption; nav.addView(b, LinearLayout.LayoutParams(-2, -2))
@@ -278,22 +278,18 @@ class MainActivity : Activity() {
             catch (e: Exception) { alert("Backup failed: " + e.message) }
             return
         }
-        if (requestCode == 205) {
+        if (requestCode == 208) {
             val selected = data?.data ?: return
             try {
-                ReimbursementPacket.importOfficialPdf(this, selected)
-                alert("Official requisition PDF imported")
-            } catch (e: Exception) { alert("PDF import failed: " + e.message) }
-            show("sheets")
-            return
-        }
-        if (requestCode == 204) {
-            val chosen = data?.data ?: return
-            try {
-                OfficialPurchaseRequisition.saveTemplate(this, chosen)
-                alert("Official purchase requisition template saved")
-            } catch (e: Exception) { alert("Template import failed: " + e.message) }
-            show("sheets")
+                val source = java.io.File(pref("pendingExcelExport"))
+                require(source.isFile && source.parentFile?.canonicalPath == java.io.File(filesDir, "exports").canonicalPath) { "Generate the Excel requisition again" }
+                contentResolver.openOutputStream(selected, "wt").use { output ->
+                    requireNotNull(output) { "Could not open the selected save location" }
+                    source.inputStream().use { it.copyTo(output) }
+                }
+                prefs.edit().remove("pendingExcelExport").commit()
+                alert("Original Gas Excel requisition saved")
+            } catch (e: Exception) { alert("Excel save failed: " + e.message) }
             return
         }
         val uri = when (requestCode) {
@@ -341,63 +337,44 @@ class MainActivity : Activity() {
                 "\n" + t.optString("destination") + " - " + t.optString("purpose") +
                 "\n" + t.optString("startOdometer") + " to " + t.optString("endOdometer", "OPEN"))
         }
-        action("Import original Karuk Excel Purchase Requisition (.xls)") {
-            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 204)
-        }
-        label(if (java.io.File(filesDir, "Karuk_Purchase_Requisitions_Original.xls").exists())
-            "Official Excel template imported" else "Official Excel template not imported")
-        action("Create and review signed Gas Excel requisition") {
-            if (receipts.length() == 0) { alert("Save a fuel receipt first"); return@action }
-            try {
-                val receipt = receipts.getJSONObject(receipts.length() - 1)
+        label("Original Karuk Gas worksheet included - no import needed.", 14f)
+        label("The signature is placed directly above Signature of Individual Requesting P.O.", 14f)
+        action("Review filled Gas requisition (PDF)") {
+            if (receipts.length() != 1) { alert("Keep one receipt on the current sheet before creating its requisition"); return@action }
+            runDocumentWork {
                 val signature = pref("signatureFile").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-                require(signature?.isFile == true) { "Save your signature first" }
-                val uri = OfficialPurchaseRequisition.export(this, receipt, pref("driver"), pref("cardLast4"), signature)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.ms-excel")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val prepared = OfficialPurchaseRequisition.prepare(this, receipts.getJSONObject(0), pref("driver"), pref("cardLast4"), signature)
+                val uri = OfficialPurchaseRequisition.uri(this, prepared.pdf)
+                runOnUiThread { previewPdf(uri) }
+            }
+        }
+        action("Save original Gas requisition as Excel (.xls)") {
+            if (receipts.length() != 1) { alert("Keep one receipt on the current sheet before creating its requisition"); return@action }
+            runDocumentWork {
+                val signature = pref("signatureFile").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+                val prepared = OfficialPurchaseRequisition.prepare(this, receipts.getJSONObject(0), pref("driver"), pref("cardLast4"), signature)
+                prefs.edit().putString("pendingExcelExport", prepared.excel.absolutePath).commit()
+                runOnUiThread {
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/vnd.ms-excel")
+                        .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, "Karuk_Gas_Requisition.xls"), 208)
                 }
-                startActivity(Intent.createChooser(intent, "Review signed Gas requisition"))
-            } catch (e: Exception) { alert("Excel review failed: " + e.message) }
+            }
         }
-        action("Create signed original Excel Purchase Requisition") {
-            if (receipts.length() == 0) { alert("Save a fuel receipt first"); return@action }
-            try {
-                val receipt = receipts.getJSONObject(receipts.length() - 1)
-                val sig = pref("signatureFile").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-                val uri = OfficialPurchaseRequisition.export(this, receipt, pref("driver"), pref("cardLast4"), sig)
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/vnd.ms-excel"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(intent, "Share original signed Excel requisition"))
-            } catch (e: Exception) { alert("Excel export failed: " + e.message) }
-        }
-        action("Import official Karuk Purchase Requisition PDF") {
-            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE), 205)
-        }
-        label(if (ReimbursementPacket.hasTemplate(this))
-            "Official requisition PDF is available" else "Official requisition PDF not imported")
         action("Generate and review complete reimbursement PDF") {
-            try {
-                val pdf = ReimbursementPacket.create(this, entries, receipts,
-                    pref("driver"), pref("cardLast4"), pref("signatureFile"))
-                previewPdf(pdf)
-            } catch (e: Exception) { alert("Packet preview failed: " + e.message) }
+            runDocumentWork {
+                val pdf = ReimbursementPacket.create(this, entries, receipts, pref("driver"), pref("cardLast4"), pref("signatureFile"))
+                runOnUiThread { previewPdf(pdf) }
+            }
         }
-        action("Generate and email complete reimbursement packet") {
-            try {
-                val pdf = ReimbursementPacket.create(this, entries, receipts,
-                    pref("driver"), pref("cardLast4"), pref("signatureFile"))
-                sendPacket(pdf, receipts)
-            } catch (e: Exception) { alert("Packet creation failed: " + e.message) }
+        action("Email complete reimbursement packet") {
+            runDocumentWork {
+                val pdf = ReimbursementPacket.create(this, entries, receipts, pref("driver"), pref("cardLast4"), pref("signatureFile"))
+                runOnUiThread { sendPacket(pdf, receipts) }
+            }
         }
         action("Review usage PDF without emailing") { exportPdf(entries, receipts, true) }
         action("Create and email usage PDF") { exportPdf(entries, receipts, false) }
-        label("Review the generated packet before emailing. The official requisition field alignment still requires verification.")
+        label("Review the PDF here first; the separate Email button opens your email draft.")
         action("Archive current sheet and start a new one") {
             var open = false
             for (i in 0 until entries.length()) if (!entries.getJSONObject(i).has("endOdometer")) open = true
@@ -420,16 +397,17 @@ class MainActivity : Activity() {
             }
         }
     }
+    private fun runDocumentWork(work: () -> Unit) {
+        val progress = android.app.ProgressDialog.show(this, "Preparing documents", "Filling the original worksheet...", true, false)
+        Thread {
+            try { work() }
+            catch (e: Exception) { runOnUiThread { alert("Document generation failed: " + e.message) } }
+            finally { runOnUiThread { if (!isFinishing) progress.dismiss() } }
+        }.start()
+    }
     private fun previewPdf(uri: Uri) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/pdf")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(intent, "Review PDF"))
-        } catch (e: Exception) {
-            alert("No PDF viewer available: " + e.message)
-        }
+        startActivity(Intent(this, PdfPreviewActivity::class.java).setData(uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
     private fun exportPdf(entries: JSONArray, receipts: JSONArray, previewOnly: Boolean = false) {
         if (entries.length() == 0 && receipts.length() == 0) { alert("No records to export"); return }
