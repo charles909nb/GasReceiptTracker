@@ -36,7 +36,7 @@ object GasSheetPdf {
             val formatter = DataFormatter(Locale.US)
             val merges = sheet.mergedRegions
             fun color(index: Short): Int {
-                // Read native BIFF RGB bytes, not desktop-only HSSFColor/java.awt.Color.
+                // Use native BIFF RGB values, avoiding desktop-only java.awt.Color on Android.
                 val rgb = book.workbook.customPalette.getColor(index.toInt()) ?: return Color.BLACK
                 return Color.rgb(rgb[0].toInt() and 255, rgb[1].toInt() and 255, rgb[2].toInt() and 255)
             }
@@ -44,7 +44,6 @@ object GasSheetPdf {
                 GasFormWorkbook.columnOffset(sheet, c), GasFormWorkbook.rowOffset(sheet, r),
                 GasFormWorkbook.columnOffset(sheet, (merge?.lastColumn ?: c) + 1),
                 GasFormWorkbook.rowOffset(sheet, (merge?.lastRow ?: r) + 1))
-            // Draw original cell fills and borders, not an approximation of a form.
             for (r in 0..47) for (c in 0..15) {
                 val cell = sheet.getRow(r)?.getCell(c) ?: continue
                 val style = cell.cellStyle
@@ -66,13 +65,20 @@ object GasSheetPdf {
                 canvas.drawLine(x1,y1,x2,y2,paint)
                 paint.pathEffect = null
             }
+            // Excel does not display the stored borders inside a merged range.
+            // Keep the original perimeter styles without exposing those hidden internal lines.
             for (r in 0..47) for (c in 0..15) {
                 val cell=sheet.getRow(r)?.getCell(c) ?: continue
                 val st=cell.cellStyle; val b=box(r,c)
-                border(st.borderLeft,st.leftBorderColor,b.left,b.top,b.left,b.bottom)
-                border(st.borderRight,st.rightBorderColor,b.right,b.top,b.right,b.bottom)
-                border(st.borderTop,st.topBorderColor,b.left,b.top,b.right,b.top)
-                border(st.borderBottom,st.bottomBorderColor,b.left,b.bottom,b.right,b.bottom)
+                val merge=merges.firstOrNull { it.isInRange(r,c) }
+                if(merge==null || c==merge.firstColumn)
+                    border(st.borderLeft,st.leftBorderColor,b.left,b.top,b.left,b.bottom)
+                if(merge==null || c==merge.lastColumn)
+                    border(st.borderRight,st.rightBorderColor,b.right,b.top,b.right,b.bottom)
+                if(merge==null || r==merge.firstRow)
+                    border(st.borderTop,st.topBorderColor,b.left,b.top,b.right,b.top)
+                if(merge==null || r==merge.lastRow)
+                    border(st.borderBottom,st.bottomBorderColor,b.left,b.bottom,b.right,b.bottom)
             }
             for (r in 0..47) for (c in 0..15) {
                 val cell = sheet.getRow(r)?.getCell(c) ?: continue
@@ -88,7 +94,6 @@ object GasSheetPdf {
                 })
                 paint.textSize=font.fontHeightInPoints.toFloat()
                 val b=box(r,c,merge); val usable=b.width()-5f
-                // The original template uses long spaces to separate header lines.
                 val printable=value.replace(Regex("[ ]{6,}"),"\n")
                 fun lines(): List<String> {
                     val result=mutableListOf<String>()
