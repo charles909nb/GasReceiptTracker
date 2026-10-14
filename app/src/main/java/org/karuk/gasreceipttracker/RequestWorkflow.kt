@@ -20,7 +20,7 @@ class RequestWorkflow(private val context: Context) {
         const val PENDING_EMAIL = "pendingRequestEmail"
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
             "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
-            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle",
+            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle", "draftFillType",
             "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn",
             "ocr_card_type", "ocr_evidence", "ocr_reviewed_at", "ocr_corrections",
             "ocr_card_verification", "ocr_card_mismatch_ack",
@@ -171,6 +171,7 @@ class RequestWorkflow(private val context: Context) {
         val pending = JSONObject().put("token", UUID.randomUUID().toString()).put("requestId", a.getString("id"))
             .put("reference", a.getString("reference")).put("fingerprint", fingerprint(a)).put("uri", uri)
             .put("subject", subject).put("to", to).put("cc", cc).put("preparedAt", stamp())
+            .put("prDate",java.time.LocalDate.now(java.time.ZoneId.systemDefault()).toString())
         write(s, false) { it.putString(PENDING_EMAIL, pending.toString()).putBoolean("requestEmailLeftApp", false) }
         return pending
     }
@@ -186,7 +187,9 @@ class RequestWorkflow(private val context: Context) {
         val a = find(s, pending.getString("requestId")) ?: error("Request not found")
         check(fingerprint(a) == pending.getString("fingerprint")) { "This request changed after preparing the email. Keep it open, review the changes and prepare a new email." }
         check(a.optString("status") == "draft") { "Request already completed." }
-        a.put("status", "sent").put("sentAt", stamp()).put("sendConfirmation", "confirmed_by_user")
+        a.put("status", "sent").put("sentAt", stamp()).put("sentEpochMs",System.currentTimeMillis())
+            .put("prDate",pending.optString("prDate"))
+            .put("sendConfirmation", "confirmed_by_user")
             .put("sentPdfUri", pending.getString("uri")).put("email", pending)
         val archives = array("archives")
         archives.put(copy(a).put("archivedAt", stamp()))
@@ -201,6 +204,48 @@ class RequestWorkflow(private val context: Context) {
         val next = (0 until list.length()).map { list.getJSONObject(it) }.firstOrNull { it.optString("status") == "draft" }
             ?: blank(s).also { list.put(it) }
         s.put("activeId", next.getString("id"))
+    }
+    /**
+     * Correct an existing fuel receipt's fill classification without modifying
+     * its already-sent PDF. Historical full/partial annotations are explicitly
+     * user supplied and are audit logged for mileage analysis.
+     */
+    @Synchronized fun setFillType(requestId:String,receiptId:String,type:String){
+        require(type in listOf("full","partial","unknown")){"Select Full, Partial or Unknown"}
+        check(pref(PENDING_EMAIL).isBlank()){"Confirm or cancel the pending email before updating mileage."}
+        val state=load();capture(state)
+        val request=find(state,requestId)?:error("Request not found")
+        val records=request.getJSONArray("receipts")
+        var found=false
+        for(i in 0 until records.length()){
+            val item=records.getJSONObject(i)
+            val id=item.optString("id").ifBlank{requestId+"-receipt-"+i}
+            if(id==receiptId){
+                if(item.optString("fillType")==type)return
+                item.put("fillType",type)
+                    .put("fillTypeConfirmedAt",stamp()).put("fillTypeSource","user")
+                found=true;break
+            }
+        }
+        check(found){"Fuel receipt was not found; no mileage information was changed."}
+        val archive=array("archives")
+        for(i in 0 until archive.length()){
+            val a=archive.optJSONObject(i)?:continue
+            if(a.optString("id")!=requestId)continue
+            val list=a.optJSONArray("receipts")?:continue
+            for(j in 0 until list.length()){
+                val record=list.getJSONObject(j)
+                val id=record.optString("id").ifBlank{requestId+"-receipt-"+j}
+                if(id==receiptId)record.put("fillType",type)
+                    .put("fillTypeConfirmedAt",stamp()).put("fillTypeSource","user")
+            }
+        }
+        write(state,false){edit->
+            edit.putString("archives",archive.toString())
+            if(state.optString("activeId")==requestId)edit.putString("receipts",records.toString())
+        }
+        TrackerDatabase(context).use{it.log(requestId,"fuel_tank_classification",
+            receiptId+": "+type)}
     }
     @Synchronized fun archiveCurrent() {
         check(pref(PENDING_EMAIL).isBlank()) { "Confirm the pending email first." }
