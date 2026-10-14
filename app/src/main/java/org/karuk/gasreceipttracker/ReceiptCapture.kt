@@ -2,6 +2,7 @@ package org.karuk.gasreceipttracker
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -51,38 +52,72 @@ class SignaturePad(context: Context) : View(context) {
     }
 }
 
-data class FuelScan(val station: String, val date: String, val gallons: String, val price: String, val total: String, val rawText: String)
+data class FuelScan(
+    val station: String, val date: String, val gallons: String, val price: String, val total: String,
+    val rawText: String, val fuelType: String = "", val cardLast4: String = "", val time: String = "",
+    val warnings: List<String> = emptyList()
+)
 
-/** OCR is a suggestion only. The driver must verify extracted values. */
+/** OCR reads locally. The driver reviews extracted values before saving. */
 object ReceiptReader {
-    private val amount = Regex("""(?:\$\s*)?(\d{1,5}[.,]\d{2})""")
-    private val gallons = Regex("""(\d{1,4}[.,]\d{3})\s*(?:GAL|GALLONS|GALS)""", RegexOption.IGNORE_CASE)
-    private val gallonsAfter = Regex("""(?:GAL|GALLONS|GALS)\s*[:#]?\s*(\d{1,4}[.,]\d{3})""", RegexOption.IGNORE_CASE)
-    private val date = Regex("""\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b""")
+    private fun quality(s: FuelScan): Int =
+        listOf(s.gallons, s.price, s.total, s.date, s.station).count { it.isNotBlank() }
+
+    private fun contrastEnhanced(context: Context, uri: Uri): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri).use { input ->
+            if (input == null) return null
+            BitmapFactory.decodeStream(input, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > 1800 || bounds.outHeight / sample > 2200) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val source = context.contentResolver.openInputStream(uri).use { input ->
+            if (input == null) return null
+            BitmapFactory.decodeStream(input, null, opts)
+        } ?: return null
+        val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val contrast = 1.65f
+        val offset = -70f
+        val matrix = android.graphics.ColorMatrix(floatArrayOf(
+            contrast, 0f, 0f, 0f, offset,
+            0f, contrast, 0f, 0f, offset,
+            0f, 0f, contrast, 0f, offset,
+            0f, 0f, 0f, 1f, 0f
+        ))
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            colorFilter = android.graphics.ColorMatrixColorFilter(matrix)
+        }
+        Canvas(output).drawBitmap(source, 0f, 0f, paint)
+        source.recycle()
+        return output
+    }
+
     fun scan(context: Context, uri: Uri, done: (FuelScan?) -> Unit) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        fun finish(result: FuelScan?) { recognizer.close(); done(result) }
         try {
             val image = InputImage.fromFilePath(context, uri)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            recognizer.process(image).addOnSuccessListener { result ->
-                val lines = result.textBlocks.flatMap { it.lines }.map { it.text.trim() }.filter { it.isNotEmpty() }
-                val totalLine = lines.lastOrNull { line ->
-                    Regex("""\b(?:GRAND TOTAL|TOTAL DUE|AMOUNT DUE|TOTAL|SALE AMOUNT)\b""", RegexOption.IGNORE_CASE).containsMatchIn(line) &&
-                    !line.contains("SUBTOTAL", true) && !line.contains("TAX", true)
+            recognizer.process(image).addOnSuccessListener { text ->
+                val first = ReceiptTextParser.parse(text.text)
+                if (first.gallons.isNotBlank() && first.price.isNotBlank() && first.total.isNotBlank()) {
+                    finish(first)
+                    return@addOnSuccessListener
                 }
-                val total = totalLine?.let { amount.findAll(it).lastOrNull()?.groupValues?.get(1) } ?: ""
-                val gallonLine = lines.firstOrNull { it.contains("GAL", true) }
-                val qty = gallonLine?.let { gallons.find(it)?.groupValues?.get(1) ?: gallonsAfter.find(it)?.groupValues?.get(1) } ?: ""
-                val unitPrice = lines.firstNotNullOfOrNull { line ->
-                    Regex("""(?:PRICE|/GAL|P/G|UNIT)\s*[:\$]?\s*(\d{1,2}[.,]\d{3})""", RegexOption.IGNORE_CASE)
-                        .find(line)?.groupValues?.get(1)
-                } ?: ""
-                val station = lines.take(4).firstOrNull { line ->
-                    line.any { it.isLetter() } && !line.contains("RECEIPT", true) &&
-                    !line.contains("WELCOME", true) && !line.contains("THANK", true)
-                }.orEmpty()
-                done(FuelScan(station, date.find(result.text)?.value.orEmpty(), qty, unitPrice, total, result.text))
-                recognizer.close()
-            }.addOnFailureListener { recognizer.close(); done(null) }
-        } catch (_: Exception) { done(null) }
+                try {
+                    val enhanced = contrastEnhanced(context, uri)
+                    if (enhanced == null) { finish(first); return@addOnSuccessListener }
+                    recognizer.process(InputImage.fromBitmap(enhanced, 0)).addOnSuccessListener { extra ->
+                        val second = ReceiptTextParser.parse(extra.text)
+                        enhanced.recycle()
+                        finish(if (quality(second) > quality(first)) second else first)
+                    }.addOnFailureListener {
+                        enhanced.recycle()
+                        finish(first)
+                    }
+                } catch (_: Exception) { finish(first) }
+            }.addOnFailureListener { finish(null) }
+        } catch (_: Exception) { finish(null) }
     }
 }
