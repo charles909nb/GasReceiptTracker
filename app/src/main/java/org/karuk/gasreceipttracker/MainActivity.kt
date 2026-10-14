@@ -171,10 +171,15 @@ class MainActivity : Activity() {
         val version=runCatching{packageManager.getPackageInfo(packageName,0).versionName}.getOrNull()?:"current"
         body.addView(TrackerStyle.card(this,"Your workspace","Version "+version+"  •  Original Karuk Gas worksheet included"))
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
-        action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
+        action("Sign current request"){show("sign")}
+        action("Finance packet archive"){startActivity(Intent(this,FinanceArchiveActivity::class.java))}
+        action("Vehicle mileage graph"){startActivity(Intent(this,MileageActivity::class.java))}
+        action("Backup and restore"){show("backup")}
     }
     private fun trips(){
-        draw("Your travel workspace");requestBanner();action("New travel / PR"){newRequestDialog(false)}
+        draw("Your travel workspace");requestBanner()
+        action("Vehicle mileage graph"){startActivity(Intent(this,MileageActivity::class.java))}
+        action("New travel / PR"){newRequestDialog(false)}
         val driverName=pref("driver");val department=pref("department");label(driverName+"  /  "+department,14f)
         val vehicle=vehiclePicker(pref("vehicle"));val entries=data("trips")
         var active=-1
@@ -718,6 +723,8 @@ class MainActivity : Activity() {
         if(workflow.pendingEmail()!=null)action("Confirm whether the last email was sent"){offerEmailConfirmation(true)}
         action("New travel / PR"){newRequestDialog(false)};action("Queue travel or work order"){newRequestDialog(true)}
         action("Search saved fuel receipts"){show("history")}
+        action("Finance packet archive"){startActivity(Intent(this,FinanceArchiveActivity::class.java))}
+        action("Vehicle mileage graph"){startActivity(Intent(this,MileageActivity::class.java))}
         val all=workflow.all();val activeId=workflow.current().getString("id");label("Open requests",20f)
         for(i in 0 until all.length()){
             val r=all.getJSONObject(i);if(r.optString("status")!="draft")continue
