@@ -20,7 +20,8 @@ class RequestWorkflow(private val context: Context) {
         const val PENDING_EMAIL = "pendingRequestEmail"
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
             "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
-            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle")
+            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle",
+            "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn")
         val PROFILE_KEYS = listOf("driver", "vehicle", "department", "cardLast4")
         fun stamp() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
     }
