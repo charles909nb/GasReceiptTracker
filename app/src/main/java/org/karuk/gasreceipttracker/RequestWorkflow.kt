@@ -21,8 +21,11 @@ class RequestWorkflow(private val context: Context) {
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
             "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
             "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle",
-            "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn")
-        val PROFILE_KEYS = listOf("driver", "vehicle", "department", "cardLast4")
+            "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn",
+            "ocr_card_type", "ocr_evidence", "ocr_reviewed_at", "ocr_corrections",
+            "ocr_card_verification", "ocr_card_mismatch_ack",
+            "ocr_profile_card_last4_at_review", "ocr_profile_card_brand_at_review")
+        val PROFILE_KEYS = listOf("driver", "vehicle", "department", "cardLast4", "cardBrand")
         fun stamp() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
     }
     private fun copy(j: JSONObject) = JSONObject(j.toString())
