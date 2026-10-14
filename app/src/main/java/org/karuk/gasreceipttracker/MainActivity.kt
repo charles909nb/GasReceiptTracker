@@ -644,12 +644,21 @@ class MainActivity : Activity() {
             if(recipients.isEmpty()){to.error="Enter an email recipient";return@setOnClickListener}
             if((recipients+ccs).any{!android.util.Patterns.EMAIL_ADDRESS.matcher(it).matches()}){to.error="Check the To and CC email addresses";return@setOnClickListener}
             try{
+                // The exact bytes shared with Finance are frozen before opening
+                // the mail chooser. The original signed PR and its date are never
+                // regenerated when an older packet is reopened or resent.
+                val attachment=if(completeRequest)
+                    FinancePackets.freeze(this,workflow.current(),uri)
+                    else uri
                 val email=Intent(Intent.ACTION_SEND).apply{
                     type="application/pdf";putExtra(Intent.EXTRA_EMAIL,recipients.toTypedArray());putExtra(Intent.EXTRA_CC,ccs.toTypedArray())
-                    putExtra(Intent.EXTRA_SUBJECT,subject.text.toString());putExtra(Intent.EXTRA_TEXT,message.text.toString());putExtra(Intent.EXTRA_STREAM,uri)
-                    clipData=android.content.ClipData.newUri(contentResolver,"Reimbursement PDF",uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    putExtra(Intent.EXTRA_SUBJECT,subject.text.toString());putExtra(Intent.EXTRA_TEXT,message.text.toString())
+                    putExtra(Intent.EXTRA_STREAM,attachment)
+                    clipData=android.content.ClipData.newUri(contentResolver,"Reimbursement PDF",attachment)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                if(completeRequest)workflow.stageEmail(uri.toString(),subject.text.toString(),recipients.joinToString(","),ccs.joinToString(","))
+                if(completeRequest)workflow.stageEmail(attachment.toString(),subject.text.toString(),
+                    recipients.joinToString(","),ccs.joinToString(","))
                 startActivityForResult(Intent.createChooser(email,"Choose your email app"),209);dialog.dismiss()
             }catch(e:Exception){if(completeRequest)workflow.cancelEmail();alert("Email could not open: "+e.message)}
         }};dialog.show()
@@ -660,7 +669,7 @@ class MainActivity : Activity() {
         if(!force&&!prefs.getBoolean("requestEmailLeftApp",false))return
         showingEmailConfirmation=true
         val dialog=android.app.AlertDialog.Builder(this).setTitle("Was "+pending.optString("reference")+" sent?")
-            .setMessage("Your email app does not report whether you pressed Send. Confirm it was sent to keep a copy in History and automatically open the next request. A canceled draft stays open.")
+            .setMessage("Android cannot report whether you pressed Send. Choose Sent only after sending. The exact signed PDF will stay in Finance Packet Archive for PR-date, receipt-date and amount lookup. A canceled email leaves the PR open.")
             .setPositiveButton("Sent - next request"){_,_->
                 try{val next=workflow.confirmSent(pending.getString("token"));show("home");alert("Saved in History. Now working on "+next.getString("reference"))}catch(e:Exception){alert(e.message.orEmpty())}
             }.setNegativeButton("Not sent"){_,_->workflow.cancelEmail();show("sheets")}
