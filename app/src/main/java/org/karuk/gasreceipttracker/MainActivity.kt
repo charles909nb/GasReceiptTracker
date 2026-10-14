@@ -388,7 +388,8 @@ class MainActivity : Activity() {
         if(requestCode==210){
             if(resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current()))
                 prefs.edit().putString("reviewedRequestFingerprint",pref("reviewPendingFingerprint")).commit()
-            prefs.edit().remove("reviewPendingFingerprint").commit();show("sheets");return
+            val back=pref("pdfPreviewReturn").ifBlank{"sheets"}
+            prefs.edit().remove("reviewPendingFingerprint").remove("pdfPreviewReturn").commit();show(back);return
         }
         if(resultCode!=RESULT_OK)return
         if(requestCode==207){
@@ -398,6 +399,21 @@ class MainActivity : Activity() {
         if(requestCode==206){
             try{TrackerBackup.export(this,requireNotNull(data?.data));alert("Backup saved")}
             catch(e:Exception){alert("Backup failed: "+e.message)};return
+        }
+        if(requestCode==212){
+            try{
+                val path=pref("pendingFinancePdfExport")
+                val file=java.io.File(path)
+                require(file.isFile && file.canonicalFile.parentFile==java.io.File(filesDir,"exports").canonicalFile){"Saved packet unavailable"}
+                val destination=requireNotNull(data?.data){"Choose a save location"}
+                contentResolver.openOutputStream(destination,"wt").use{out->
+                    requireNotNull(out){"Cannot open destination"}
+                    file.inputStream().use{it.copyTo(out)}
+                }
+                prefs.edit().remove("pendingFinancePdfExport").remove("pendingFinancePdfName").commit()
+                alert("Complete finance PDF exported")
+            }catch(e:Exception){alert("Finance PDF export failed: "+e.message)}
+            return
         }
         if(requestCode==208){
             val selected=data?.data?:return
@@ -470,6 +486,7 @@ class MainActivity : Activity() {
     }
     private fun previewPdf(uri:Uri,track:Boolean=false){
         if(track)prefs.edit().putString("reviewPendingFingerprint",workflow.fingerprint(workflow.current())).commit()
+        prefs.edit().putString("pdfPreviewReturn",currentScreen).commit()
         startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
     }
     private fun exportPdf(entries:JSONArray,receipts:JSONArray,previewOnly:Boolean=false){
