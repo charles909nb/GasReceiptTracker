@@ -14,12 +14,12 @@ import java.util.UUID
  * A share intent is never proof of sending. Only explicit confirmation closes a request.
  */
 class RequestWorkflow(private val context: Context) {
-    private val prefs = context.getSharedPreferences("usage_data", Context.MODE_PRIVATE)
+    private val prefs = LedgerStore.prefs(context)
     companion object {
         const val STATE = "requestWorkflowV1"
         const val PENDING_EMAIL = "pendingRequestEmail"
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
-            "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
+            "ocr_raw", "ocr_warnings", "ocr_cardLast4", "ocr_time", "ocr_scanId", "draftReceiptCard", "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
             "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle")
         val PROFILE_KEYS = listOf("driver", "vehicle", "department", "cardLast4")
         fun stamp() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
@@ -39,7 +39,7 @@ class RequestWorkflow(private val context: Context) {
         val number = s.optInt("nextNumber", 1)
         s.put("nextNumber", number + 1)
         return JSONObject().put("id", UUID.randomUUID().toString()).put("reference", "PR-%05d".format(Locale.US, number))
-            .put("title", title).put("kind", kind).put("status", "draft").put("createdAt", stamp())
+            .put("requestDate", java.time.LocalDate.now().toString()).put("title", title).put("kind", kind).put("status", "draft").put("createdAt", stamp())
             .put("profile", fields(PROFILE_KEYS)).put("drafts", JSONObject()).put("trips", JSONArray())
             .put("receipts", JSONArray()).put("signatureFile", "")
     }
@@ -63,6 +63,7 @@ class RequestWorkflow(private val context: Context) {
     }
     private fun capture(s: JSONObject) {
         val a = active(s)
+        a.put("savedAtEpoch",System.currentTimeMillis())
         a.put("trips", array("trips")).put("receipts", array("receipts"))
             .put("drafts", fields(DRAFT_KEYS)).put("profile", fields(PROFILE_KEYS))
             .put("signatureFile", pref("signatureFile"))
@@ -84,6 +85,13 @@ class RequestWorkflow(private val context: Context) {
         }
         extra?.invoke(e)
         check(e.commit()) { "The phone could not save the request. Nothing should be deleted; free some storage and retry." }
+    }
+    @Synchronized fun stampRequestDate(): String {
+        val s=load();capture(s);val a=active(s)
+        val date=java.time.LocalDate.now().toString()
+        check(a.optString("status")=="draft") { "Saved historical requests retain their original date." }
+        if(a.optString("requestDate")!=date){a.put("requestDate",date);write(s,false){it.remove("reviewedRequestFingerprint")}}
+        return date
     }
     @Synchronized fun sync() { val s = load(); capture(s); write(s) }
     @Synchronized fun current(): JSONObject { val s = load(); capture(s); return copy(active(s)) }
@@ -134,10 +142,10 @@ class RequestWorkflow(private val context: Context) {
     }
     fun signed(): Boolean = pref("signatureFile").let { it.isNotBlank() && File(it).isFile && File(it).length() > 0 }
     fun fingerprint(a: JSONObject): String {
-        val values = listOf("id", "profile", "trips", "receipts", "signatureFile").joinToString("|") { a.opt(it).toString() }
+        val values = listOf("id", "requestDate", "profile", "trips", "receipts", "signatureFile").joinToString("|") { a.opt(it).toString() }
         return MessageDigest.getInstance("SHA-256").digest(values.toByteArray()).joinToString("") { "%02x".format(it) }
     }
-    @Synchronized fun stageEmail(uri: String, subject: String, to: String, cc: String): JSONObject {
+    @Synchronized fun stageEmail(uri: String, subject: String, to: String, cc: String, body: String = ""): JSONObject {
         check(pref(PENDING_EMAIL).isBlank()) { "A previous email still needs your confirmation." }
         val s = load(); capture(s); val a = active(s)
         check(!hasOpenTrip(a)) { "Finish the current trip before sending its request." }
@@ -145,7 +153,7 @@ class RequestWorkflow(private val context: Context) {
         check(signed()) { "Sign this request first." }
         val pending = JSONObject().put("token", UUID.randomUUID().toString()).put("requestId", a.getString("id"))
             .put("reference", a.getString("reference")).put("fingerprint", fingerprint(a)).put("uri", uri)
-            .put("subject", subject).put("to", to).put("cc", cc).put("preparedAt", stamp())
+            .put("requestDate", a.optString("requestDate")).put("receiptDate", a.getJSONArray("receipts").optJSONObject(0)?.optString("date")).put("subject", subject).put("to", to).put("cc", cc).put("body", body).put("preparedAt", stamp())
         write(s, false) { it.putString(PENDING_EMAIL, pending.toString()).putBoolean("requestEmailLeftApp", false) }
         return pending
     }

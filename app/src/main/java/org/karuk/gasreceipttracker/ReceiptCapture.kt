@@ -51,38 +51,35 @@ class SignaturePad(context: Context) : View(context) {
     }
 }
 
-data class FuelScan(val station: String, val date: String, val gallons: String, val price: String, val total: String, val rawText: String)
+data class FuelScan(val station:String, val date:String, val gallons:String, val price:String, val total:String,
+    val rawText:String, val cardLast4:String="", val receiptTime:String="", val warnings:List<String> = emptyList(), val scanId:String="")
 
-/** OCR is a suggestion only. The driver must verify extracted values. */
+/** One on-device recognition pass. Aligns columns by their image coordinates. */
 object ReceiptReader {
-    private val amount = Regex("""(?:\$\s*)?(\d{1,5}[.,]\d{2})""")
-    private val gallons = Regex("""(\d{1,4}[.,]\d{3})\s*(?:GAL|GALLONS|GALS)""", RegexOption.IGNORE_CASE)
-    private val gallonsAfter = Regex("""(?:GAL|GALLONS|GALS)\s*[:#]?\s*(\d{1,4}[.,]\d{3})""", RegexOption.IGNORE_CASE)
-    private val date = Regex("""\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b""")
-    fun scan(context: Context, uri: Uri, done: (FuelScan?) -> Unit) {
+    fun scan(context:Context, uri:Uri, done:(FuelScan?)->Unit) {
         try {
-            val image = InputImage.fromFilePath(context, uri)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            val image=InputImage.fromFilePath(context,uri)
+            val recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            val prefs=LedgerStore.prefs(context)
+            val state=org.json.JSONObject(prefs.getString(RequestWorkflow.STATE,"{}").orEmpty())
+            val requestId=state.optString("activeId")
             recognizer.process(image).addOnSuccessListener { result ->
-                val lines = result.textBlocks.flatMap { it.lines }.map { it.text.trim() }.filter { it.isNotEmpty() }
-                val totalLine = lines.lastOrNull { line ->
-                    Regex("""\b(?:GRAND TOTAL|TOTAL DUE|AMOUNT DUE|TOTAL|SALE AMOUNT)\b""", RegexOption.IGNORE_CASE).containsMatchIn(line) &&
-                    !line.contains("SUBTOTAL", true) && !line.contains("TAX", true)
-                }
-                val total = totalLine?.let { amount.findAll(it).lastOrNull()?.groupValues?.get(1) } ?: ""
-                val gallonLine = lines.firstOrNull { it.contains("GAL", true) }
-                val qty = gallonLine?.let { gallons.find(it)?.groupValues?.get(1) ?: gallonsAfter.find(it)?.groupValues?.get(1) } ?: ""
-                val unitPrice = lines.firstNotNullOfOrNull { line ->
-                    Regex("""(?:PRICE|/GAL|P/G|UNIT)\s*[:\$]?\s*(\d{1,2}[.,]\d{3})""", RegexOption.IGNORE_CASE)
-                        .find(line)?.groupValues?.get(1)
-                } ?: ""
-                val station = lines.take(4).firstOrNull { line ->
-                    line.any { it.isLetter() } && !line.contains("RECEIPT", true) &&
-                    !line.contains("WELCOME", true) && !line.contains("THANK", true)
-                }.orEmpty()
-                done(FuelScan(station, date.find(result.text)?.value.orEmpty(), qty, unitPrice, total, result.text))
+                try {
+                    val positioned=result.textBlocks.flatMap{it.lines}.mapNotNull{l->l.boundingBox?.let{b->
+                        FuelReceiptParser.Line(l.text,b.left.toFloat(),b.top.toFloat(),b.width().toFloat(),b.height().toFloat())}}
+                    val parsed=FuelReceiptParser.parse(result.text,positioned)
+                    val record=parsed.json().put("image",uri.toString()).put("requestId",requestId).put("scannedAt",RequestWorkflow.stamp())
+                    val id=LedgerStore.rememberScan(context,record)
+                    done(FuelScan(parsed.station,parsed.date,parsed.gallons,parsed.price,parsed.total,parsed.raw,
+                        parsed.cardLast4,parsed.time,parsed.warnings,id))
+                } catch(e:Exception) { android.util.Log.e("ReceiptReader","Scan could not be saved",e); done(null) }
+                finally { recognizer.close() }
+            }.addOnFailureListener { e ->
                 recognizer.close()
-            }.addOnFailureListener { recognizer.close(); done(null) }
-        } catch (_: Exception) { done(null) }
+                runCatching { LedgerStore.rememberScan(context,org.json.JSONObject().put("image",uri.toString())
+                    .put("requestId",requestId).put("error",e.message).put("scannedAt",RequestWorkflow.stamp())) }
+                done(null)
+            }
+        } catch(e:Exception) { done(null) }
     }
 }

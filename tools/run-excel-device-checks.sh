@@ -6,8 +6,10 @@ gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r org.karuk.gasreceipttracker.preview.test/androidx.test.runner.AndroidJUnitRunner | tee verification-instrumentation.txt
-grep -q 'OK (16 tests)' verification-instrumentation.txt
+grep -q 'OK (26 tests)' verification-instrumentation.txt
 adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
+test -s verification/Receipt_Photo_OCR_Results.txt
+test -s verification/UI_Database_Search.png
 test -s verification/UI_Home.png
 test -s verification/UI_Signed_Pdf.png
 test -s verification/Sample_Gas_Requisition.xls

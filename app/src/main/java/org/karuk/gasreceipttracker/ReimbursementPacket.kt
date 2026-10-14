@@ -31,7 +31,16 @@ object ReimbursementPacket {
         val identity=prepared.excel.name+trips.toString()+receipts.toString()+"packet-v2"
         val key=MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString(""){"%02x".format(it)}.take(24)
         val destination=File(context.filesDir,"exports/Karuk_Reimbursement_$key.pdf")
-        if(destination.isFile)return OfficialPurchaseRequisition.uri(context,destination)
+        fun remember(){
+            val state=org.json.JSONObject(LedgerStore.prefs(context).getString(RequestWorkflow.STATE,"{}").orEmpty())
+            val record=org.json.JSONObject().put("requestDate",prepared.requestDate).put("receiptDate",receipt.optString("date"))
+                .put("requestId",state.optString("activeId")).put("format","pdf").put("documentType","Reimbursement packet")
+                .put("path",destination.absolutePath).put("receipt",receipt).put("trips",trips)
+                .put("vehicle",receipt.optString("vehicle")).put("station",receipt.optString("station")).put("cost",receipt.optString("cost"))
+            state.optJSONArray("orders")?.let{a->for(i in 0 until a.length())if(a.getJSONObject(i).optString("id")==state.optString("activeId"))record.put("reference",a.getJSONObject(i).optString("reference"))}
+            LedgerStore.rememberDocument(context,destination.name,record)
+        }
+        if(destination.isFile){remember();return OfficialPurchaseRequisition.uri(context,destination)}
         val part=File(destination.parentFile,destination.name+".part")
         try{
             val doc = PdfDocument()
@@ -55,6 +64,7 @@ object ReimbursementPacket {
                 FileOutputStream(part).use{doc.writeTo(it);it.fd.sync()}
             } finally { doc.close() }
             check(part.renameTo(destination)){"Could not save the reimbursement packet"}
+            remember()
             return OfficialPurchaseRequisition.uri(context,destination)
         }catch(e:Exception){part.delete();throw e}
     }

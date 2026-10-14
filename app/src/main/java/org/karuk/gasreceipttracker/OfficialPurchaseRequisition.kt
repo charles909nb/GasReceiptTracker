@@ -13,7 +13,7 @@ import java.security.MessageDigest
 
 /** Always uses the bundled original Gas worksheet. No user import is needed. */
 object OfficialPurchaseRequisition {
-    data class Prepared(val excel: File, val pdf: File, val signed: Boolean)
+    data class Prepared(val excel: File, val pdf: File, val signed: Boolean, val requestDate: String)
     fun hasTemplate(context: Context): Boolean = runCatching {
         context.assets.open(GasFormWorkbook.ASSET).use { it.read() >= 0 }
     }.getOrDefault(false)
@@ -34,11 +34,12 @@ object OfficialPurchaseRequisition {
         val result=Triple(stream.toByteArray(),trimmed.width,trimmed.height)
         if(trimmed !== source)trimmed.recycle();source.recycle();return result
     }
-    fun prepare(context: Context, receipt: JSONObject, driver: String, card: String, signatureFile: File?): Prepared {
+    fun prepare(context: Context, receipt: JSONObject, driver: String, card: String, signatureFile: File?, clock: java.time.Clock = java.time.Clock.systemDefaultZone()): Prepared {
+        val requestDate = java.time.LocalDate.now(clock).toString()
         val sig=signature(signatureFile)
         val template=context.assets.open(GasFormWorkbook.ASSET).use { it.readBytes() }
         require(digest(template)==GasFormWorkbook.TEMPLATE_SHA256){"The built-in official worksheet is damaged"}
-        val bytes=GasFormWorkbook.fill(template.inputStream(),receipt.optString("date"),
+        val bytes=GasFormWorkbook.fill(template.inputStream(),requestDate,
             receipt.optString("driver").ifBlank{driver},receipt.optString("cardLast4").ifBlank{card},
             receipt.optString("vehicle"),receipt.optString("gallons"),receipt.optString("price"),receipt.optString("cost"),sig.first,sig.second,sig.third)
         val directory=File(context.filesDir,"exports").apply { mkdirs() }
@@ -54,7 +55,15 @@ object OfficialPurchaseRequisition {
             try{GasSheetPdf.write(bytes,part);check(part.renameTo(pdf)){"Could not save PDF preview"}}
             catch(e:Exception){part.delete();throw e}
         }
-        return Prepared(excel,pdf,sig.first!=null)
+        val record=org.json.JSONObject().put("requestDate",requestDate).put("receiptDate",receipt.optString("date"))
+            .put("vehicle",receipt.optString("vehicle")).put("station",receipt.optString("station")).put("cost",receipt.optString("cost"))
+            .put("receipt",org.json.JSONObject(receipt.toString())).put("driver",driver).put("signatureFile",signatureFile?.absolutePath.orEmpty())
+        val state=org.json.JSONObject(LedgerStore.prefs(context).getString(RequestWorkflow.STATE,"{}").orEmpty())
+        record.put("requestId",state.optString("activeId"))
+        state.optJSONArray("orders")?.let { a -> for(i in 0 until a.length())if(a.getJSONObject(i).optString("id")==state.optString("activeId"))record.put("reference",a.getJSONObject(i).optString("reference")) }
+        LedgerStore.rememberDocument(context,excel.name,org.json.JSONObject(record.toString()).put("format","xls").put("path",excel.absolutePath))
+        LedgerStore.rememberDocument(context,pdf.name,org.json.JSONObject(record.toString()).put("format","pdf").put("path",pdf.absolutePath))
+        return Prepared(excel,pdf,sig.first!=null,requestDate)
     }
     fun export(context: Context, receipt: JSONObject, driver: String, cardLast4: String, signature: File?): Uri =
         uri(context,prepare(context,receipt,driver,cardLast4,signature).excel)

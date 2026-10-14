@@ -25,7 +25,7 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : Activity() {
-    private val prefs by lazy { getSharedPreferences("usage_data", MODE_PRIVATE) }
+    private val prefs by lazy { LedgerStore.prefs(this) }
     private val workflow by lazy { RequestWorkflow(this) }
     private lateinit var body: LinearLayout
     private var currentScreen = "home"
@@ -69,7 +69,7 @@ class MainActivity : Activity() {
         scroll.addView(body);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));label(title,24f)
         val nav=LinearLayout(this).apply{setBackgroundColor(Color.WHITE);setPadding(dp(4),dp(5),dp(4),dp(5))}
         for((caption,dest)in listOf("Trips" to "home","Fuel" to "fuel","Docs" to "sheets","Requests" to "requests","More" to "more")){
-            val selected=currentScreen==dest||(dest=="more"&&currentScreen in listOf("email","sign","backup","setup"))
+            val selected=currentScreen==dest||(dest=="more"&&currentScreen in listOf("email","sign","backup","setup","database"))
             val button=TrackerStyle.button(this,caption,false){show(dest)}.apply{
                 textSize=12f;setPadding(0,dp(10),0,dp(10));minimumWidth=0;minWidth=0
                 background=TrackerStyle.shape(this@MainActivity,if(selected)TrackerStyle.blush else Color.WHITE,null,10)
@@ -149,7 +149,7 @@ class MainActivity : Activity() {
             if(documentBusy){alert("Please wait for the document to finish.");return}
             currentScreen=where
             when(where){"fuel"->fuel();"sheets"->sheets();"email"->emailSettings();"sign"->signatureScreen();"backup"->backupScreen()
-                "setup"->setupScreen();"requests"->requestList();"more"->moreScreen();else->trips()}
+                "setup"->setupScreen();"requests"->requestList();"database"->databaseScreen();"more"->moreScreen();else->trips()}
         }catch(e:Exception){alert(e.message.orEmpty())}
     }
     override fun onSaveInstanceState(outState:Bundle){outState.putString("screen",currentScreen);outState.putString("camera",cameraUri?.toString());super.onSaveInstanceState(outState)}
@@ -160,9 +160,9 @@ class MainActivity : Activity() {
     override fun onResume(){super.onResume();window.decorView.post{offerEmailConfirmation()}}
     private fun moreScreen(){
         draw("Settings & tools")
-        body.addView(TrackerStyle.card(this,"Your workspace","Version 1.9  •  Original Karuk Gas worksheet included"))
+        body.addView(TrackerStyle.card(this,"Your workspace","Version 1.9.1  •  Original Karuk Gas worksheet included"))
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
-        action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
+        action("Sign current request"){show("sign")};action("Search saved database records"){show("database")};action("Backup and restore"){show("backup")}
     }
     private fun trips(){
         draw("Your travel workspace");requestBanner();action("New travel / PR"){newRequestDialog(false)}
@@ -217,14 +217,21 @@ class MainActivity : Activity() {
     private fun fuel(){
         draw("Fuel & receipts");requestBanner()
         val receipts=data("receipts");label("Attach a receipt photograph and check the fueling information.")
-        val station=edit("Gas station",pref("ocr_station"));val date=edit("Fuel date and time",pref("ocr_date").ifBlank{now})
+        val station=edit("Gas station",pref("ocr_station"));val date=edit("Receipt purchase date",pref("ocr_date"))
         val vehicle=vehiclePicker(pref("draftFuelVehicle").ifBlank{pref("vehicle")},"draftFuelVehicle")
         val odometer=edit("Odometer at fueling",pref("draftOdometer"),true)
         val gallons=edit("Total gallons",pref("ocr_gallons"),true);val price=edit("Price per gallon",pref("ocr_price"),true)
         val cost=edit("Total cost",pref("ocr_total"),true)
+        val receiptCard=edit("Receipt card last 4 (check against receipt)",pref("draftReceiptCard").ifBlank{pref("ocr_cardLast4").ifBlank{pref("cardLast4")}})
+        autoSaveField(receiptCard,"draftReceiptCard")
         autoSaveField(station,"ocr_station");autoSaveField(date,"ocr_date");autoSaveField(odometer,"draftOdometer")
         autoSaveField(gallons,"ocr_gallons");autoSaveField(price,"ocr_price");autoSaveField(cost,"ocr_total")
-        label("Entries are saved automatically as you type.",14f)
+        label("Saved automatically in this phone's database. PR date: "+GasFormWorkbook.displayDate(java.time.LocalDate.now().toString())+". Receipt date is separate.",14f)
+        if(pref("ocr_warnings").isNotBlank())label(pref("ocr_warnings"),14f)
+        if(pref("ocr_raw").isNotBlank())action("Review text read from receipt"){
+            android.app.AlertDialog.Builder(this).setTitle("Receipt scan - verify these values")
+                .setMessage(pref("ocr_raw")).setPositiveButton("Close",null).show()
+        }
         label(if(pref("pending_receipt").isBlank())"No receipt image attached" else "Receipt image attached")
         label("Receipt scanning suggests values. Check each value against the image before saving.",14f)
         action("Scan and crop receipt automatically"){
@@ -257,10 +264,12 @@ class MainActivity : Activity() {
                 if(workflow.current().getString("id")!=requestId)return@runOnUiThread
                 if(result==null){alert("Unable to read receipt. Enter values manually.");return@runOnUiThread}
                 station.setText(result.station)
-                if(result.date.isNotBlank())date.setText(result.date)
-                if(result.gallons.isNotBlank())gallons.setText(result.gallons)
-                if(result.price.isNotBlank())price.setText(result.price)
-                if(result.total.isNotBlank())cost.setText(result.total)
+                saveScanDraft(result)
+                date.setText(result.date)
+                gallons.setText(result.gallons)
+                price.setText(result.price)
+                cost.setText(result.total)
+                if(result.cardLast4.isNotBlank())receiptCard.setText(result.cardLast4)
                 workflow.sync();alert("Receipt scanned. Check and correct the values before saving.")
             }}
         }
@@ -273,14 +282,20 @@ class MainActivity : Activity() {
             if(workflow.pendingEmail()!=null){offerEmailConfirmation(true);return@action}
             if(receipts.length()>0){alert("This request already has a receipt. Complete it or start a new travel / PR in Requests.");return@action}
             val selected=pref("pending_receipt");val od=odometer.text.toString().toDoubleOrNull();val gal=gallons.text.toString().toDoubleOrNull();val total=cost.text.toString().toDoubleOrNull()
+            if(date.text.isBlank()){date.error="Enter the purchase date printed on the receipt";return@action}
+            if(receiptCard.text.isNotBlank()&&!receiptCard.text.toString().matches(Regex("[0-9]{4}"))){receiptCard.error="Only the last four digits";return@action}
             if(selected.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")||od==null||!od.isFinite()||od<0||gal==null||!gal.isFinite()||gal<=0||total==null||!total.isFinite()||total<=0){
                 alert("Attach receipt and enter vehicle, odometer, gallons and total cost");return@action
             }
             receipts.put(JSONObject().put("station",station.text.toString()).put("date",date.text.toString()).put("vehicle",vehicle.selectedItem.toString())
-                .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",pref("cardLast4"))
+                .put("odometer",odometer.text.toString()).put("driver",pref("driver")).put("cardLast4",receiptCard.text.toString())
+                .put("receiptDate",date.text.toString()).put("receiptTime",pref("ocr_time"))
+                .put("ocrRawText",pref("ocr_raw")).put("ocrWarnings",pref("ocr_warnings")).put("scanId",pref("ocr_scanId"))
+                .put("savedAt",now).put("id",java.util.UUID.randomUUID().toString())
                 .put("gallons",gallons.text.toString()).put("price",price.text.toString()).put("cost",cost.text.toString()).put("image",selected))
             store("receipts",receipts)
             prefs.edit().remove("pending_receipt").remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total")
+                .remove("ocr_raw").remove("ocr_warnings").remove("ocr_time").remove("ocr_cardLast4").remove("ocr_scanId").remove("draftReceiptCard")
                 .remove("draftOdometer").putString("vehicle",vehicle.selectedItem.toString()).putString("lastOdometer_"+vehicle.selectedItem.toString(),odometer.text.toString()).commit()
             workflow.sync();alert("Receipt saved to "+workflow.current().getString("reference"));show("sheets")
         }
@@ -335,20 +350,26 @@ class MainActivity : Activity() {
                 val target=java.io.File(filesDir,"receipt_"+System.currentTimeMillis()+".jpg")
                 contentResolver.openInputStream(uri).use{input->requireNotNull(input){"Receipt image cannot be opened"};target.outputStream().use{input.copyTo(it)}}
                 val saved=Uri.fromFile(target)
-                prefs.edit().putString("pending_receipt",saved.toString()).remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").commit()
+                prefs.edit().putString("pending_receipt",saved.toString()).remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price").remove("ocr_total").remove("ocr_raw").remove("ocr_warnings").remove("ocr_cardLast4").remove("ocr_scanId").remove("ocr_time").remove("draftReceiptCard").commit()
                 workflow.sync()
                 ReceiptReader.scan(this,saved){scan->runOnUiThread{
                     if(workflow.current().getString("id")!=requestId)return@runOnUiThread
-                    if(scan!=null)prefs.edit().putString("ocr_station",scan.station).putString("ocr_date",scan.date).putString("ocr_gallons",scan.gallons)
-                        .putString("ocr_price",scan.price).putString("ocr_total",scan.total).commit()
+                    if(scan!=null)saveScanDraft(scan)
                     workflow.sync();show("fuel");alert(if(scan==null)"Receipt scan failed; enter details manually"else "Receipt scanned; please verify values")
                 }}
             }catch(e:Exception){alert("Could not save receipt: "+e.message)}
         }
     }
+    private fun saveScanDraft(scan:FuelScan){
+        check(prefs.edit().putString("ocr_station",scan.station).putString("ocr_date",scan.date)
+            .putString("ocr_gallons",scan.gallons).putString("ocr_price",scan.price).putString("ocr_total",scan.total)
+            .putString("ocr_raw",scan.rawText).putString("ocr_warnings",scan.warnings.joinToString("\n"))
+            .putString("ocr_cardLast4",scan.cardLast4).putString("ocr_time",scan.receiptTime).putString("ocr_scanId",scan.scanId).commit())
+    }
     private fun sheets(){
         draw("Documents & review");val entries=data("trips");val receipts=data("receipts")
         label("Original Karuk Gas worksheet included - no import needed.",14f)
+        label("Purchase request date: "+GasFormWorkbook.displayDate(java.time.LocalDate.now().toString())+" (today). Receipt dates are retained unchanged.",14f)
         label("The signature is placed directly above Signature of Individual Requesting P.O.",14f);requestBanner()
         action("Review filled Gas requisition (PDF)"){continueDocument("requisition")}
         action("Save original Gas requisition as Excel (.xls)"){continueDocument("excel")}
@@ -456,6 +477,7 @@ class MainActivity : Activity() {
             show("sign");return
         }
         if(operation=="email"&&workflow.pendingEmail()!=null){offerEmailConfirmation(true);return}
+        workflow.stampRequestDate()
         val entries=data("trips");val signature=java.io.File(pref("signatureFile"));val driver=pref("driver");val card=pref("cardLast4");val req=workflow.current()
         runDocumentWork{
             when(operation){
@@ -477,9 +499,9 @@ class MainActivity : Activity() {
     private fun renderTemplate(template:String,receipt:JSONObject):String{
         val req=workflow.current()
         val values=mapOf("{prNumber}" to req.optString("reference"),"{requestTitle}" to req.optString("title"),"{requestType}" to req.optString("kind"),
-            "{date}" to receipt.optString("date"),"{vehicle}" to receipt.optString("vehicle",pref("vehicle")),"{driver}" to pref("driver"),
+            "{date}" to receipt.optString("date"),"{receiptDate}" to receipt.optString("date"),"{prDate}" to GasFormWorkbook.displayDate(java.time.LocalDate.now().toString()),"{vehicle}" to receipt.optString("vehicle",pref("vehicle")),"{driver}" to pref("driver"),
             "{program}" to pref("department"),"{station}" to receipt.optString("station"),"{amount}" to receipt.optString("cost"),
-            "{gallons}" to receipt.optString("gallons"),"{pricePerGallon}" to receipt.optString("price"),"{odometer}" to receipt.optString("odometer"),"{cardLast4}" to pref("cardLast4"))
+            "{gallons}" to receipt.optString("gallons"),"{pricePerGallon}" to receipt.optString("price"),"{odometer}" to receipt.optString("odometer"),"{cardLast4}" to receipt.optString("cardLast4").ifBlank{pref("cardLast4")})
         var result=template.replace("\\n","\n").replace("\\u0024","$")
         for((key,value)in values)result=result.replace(key,value)
         return result
@@ -496,7 +518,7 @@ class MainActivity : Activity() {
         val message=EditText(this).apply{minLines=5;setSingleLine(false)
             setText(prefs.getString("emailBody","Please find attached the fuel reimbursement packet for vehicle {vehicle}.\nAmount: \u0024{amount}\nGallons: {gallons}\nStation: {station}\nDate: {date}\nDriver: {driver}\nProgram: {program}"))}
         TrackerStyle.input(this,message);body.addView(message)
-        label("Available fields: {date}, {vehicle}, {driver}, {program}, {station}, {amount}, {gallons}, {pricePerGallon}, {odometer}, {cardLast4}, {prNumber}, {requestTitle}, {requestType}",14f)
+        label("Available fields: {date}, {vehicle}, {driver}, {program}, {station}, {amount}, {gallons}, {pricePerGallon}, {odometer}, {cardLast4}, {prNumber}, {requestTitle}, {requestType}, {prDate}, {receiptDate}",14f)
         action("Save email template"){
             prefs.edit().putString("emailTo",recipient.text.toString().trim()).putString("cardLast4",card.text.toString().trim()).putString("myEmail",myEmail.text.toString().trim())
                 .putString("emailCc",ccOthers.text.toString().trim()).putBoolean("ccSelf",ccSelf.isChecked).putString("emailSubject",subject.text.toString()).putString("emailBody",message.text.toString()).commit()
@@ -536,7 +558,7 @@ class MainActivity : Activity() {
                     putExtra(Intent.EXTRA_SUBJECT,subject.text.toString());putExtra(Intent.EXTRA_TEXT,message.text.toString());putExtra(Intent.EXTRA_STREAM,uri)
                     clipData=android.content.ClipData.newUri(contentResolver,"Reimbursement PDF",uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                if(completeRequest)workflow.stageEmail(uri.toString(),subject.text.toString(),recipients.joinToString(","),ccs.joinToString(","))
+                if(completeRequest)workflow.stageEmail(uri.toString(),subject.text.toString(),recipients.joinToString(","),ccs.joinToString(","),message.text.toString())
                 startActivityForResult(Intent.createChooser(email,"Choose your email app"),209);dialog.dismiss()
             }catch(e:Exception){if(completeRequest)workflow.cancelEmail();alert("Email could not open: "+e.message)}
         }};dialog.show()
@@ -567,6 +589,7 @@ class MainActivity : Activity() {
     }
     private fun requestList(){
         draw("Requests & history")
+        action("Search saved database records"){show("database")}
         if(workflow.pendingEmail()!=null)action("Confirm whether the last email was sent"){offerEmailConfirmation(true)}
         action("New travel / PR"){newRequestDialog(false)};action("Queue travel or work order"){newRequestDialog(true)}
         val all=workflow.all();val activeId=workflow.current().getString("id");label("Open requests",20f)
@@ -586,4 +609,61 @@ class MainActivity : Activity() {
         if(completed==0)label("Sent and archived requests will appear here. No requests are deleted when you move on.",14f)
         label("PR numbers are local tracking references, not Finance approval or official P.O. numbers.",12f)
     }
+    private fun databaseScreen(){
+        draw("Saved records database")
+        val counts=LedgerStore.counts(this)
+        body.addView(TrackerStyle.card(this,"Saved on this phone",
+            "${counts.optInt("request")} requests | ${counts.optInt("receipt")} receipts | ${counts.optInt("document")} documents | ${counts.optInt("scan")} scans",true))
+        label("Search by PR number, receipt date, vehicle, station or amount. Photos and signatures stay in app storage; the database retains their links. Export a backup before changing phones or uninstalling.",14f)
+        val query=edit("Search saved records")
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        fun load(){
+            results.removeAllViews()
+            val rows=LedgerStore.search(this,query.text.toString())
+            results.addView(TrackerStyle.text(this,"${rows.length()} results (up to 100 shown)",13f))
+            for(i in 0 until rows.length()){
+                val row=rows.getJSONObject(i);val p=row.getJSONObject("payload");val kind=row.getString("kind")
+                val title=when(kind){
+                    "receipt"->"Receipt - "+p.optString("station")
+                    "document"->"Saved "+p.optString("format").uppercase()+" - "+row.optString("reference")
+                    "scan"->"Receipt scan - "+p.optString("station")
+                    "trip"->"Trip - "+p.optString("destination")
+                    else->row.optString("reference")+" - "+p.optString("title")
+                }
+                val details=listOf("PR date: "+p.optString("requestDate","Not recorded"),
+                    "Receipt date: "+p.optString("receiptDate",p.optString("date","Not applicable")),
+                    "Vehicle: "+p.optString("vehicle",p.optJSONObject("profile")?.optString("vehicle").orEmpty()),
+                    "Amount: "+p.optString("cost")).joinToString("\n")
+                val card=TrackerStyle.card(this,title,details)
+                card.addView(TrackerStyle.button(this,"View saved details",false){
+                    val view=TextView(this).apply{text=p.toString(2);setTextIsSelectable(true);setPadding(dp(14),dp(14),dp(14),dp(14))}
+                    val scroll=ScrollView(this);scroll.addView(view)
+                    android.app.AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton("Close",null).show()
+                })
+                val path=p.optString("path")
+                if(kind=="document"&&p.optString("format")=="pdf"&&java.io.File(path).isFile)
+                    card.addView(TrackerStyle.button(this,"Review saved PDF",false){previewPdf(OfficialPurchaseRequisition.uri(this,java.io.File(path)))})
+                if(kind=="document"&&p.optString("format")=="xls"&&java.io.File(path).isFile)
+                    card.addView(TrackerStyle.button(this,"Save this Excel copy",false){
+                        prefs.edit().putString("pendingExcelExport",path).commit()
+                        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/vnd.ms-excel").addCategory(Intent.CATEGORY_OPENABLE)
+                            .putExtra(Intent.EXTRA_TITLE,java.io.File(path).name),208)
+                    })
+                val image=p.optString("image")
+                if(image.isNotBlank())card.addView(TrackerStyle.button(this,"View saved receipt image",false){
+                    try{
+                        val stored=Uri.parse(image)
+                        val uri=if(stored.scheme=="file"){
+                            val source=java.io.File(requireNotNull(stored.path));val copy=java.io.File(filesDir,"exports/"+source.name).apply{parentFile?.mkdirs()}
+                            source.copyTo(copy,true);OfficialPurchaseRequisition.uri(this,copy)
+                        }else stored
+                        startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    }catch(e:Exception){alert("Cannot open receipt image: "+e.message)}
+                })
+                results.addView(card)
+            }
+        }
+        action("Search database"){load()};body.addView(results);load()
+    }
+
 }

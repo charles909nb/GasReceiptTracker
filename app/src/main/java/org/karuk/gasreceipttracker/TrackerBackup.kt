@@ -15,13 +15,15 @@ object TrackerBackup {
     private val keys = (RequestWorkflow.DRAFT_KEYS + RequestWorkflow.PROFILE_KEYS + listOf(
         "trips","receipts","archives","signatureFile","emailTo","emailSubject","emailBody","myEmail","emailCc",
         "vehicles","ccSelf","setupDone",RequestWorkflow.STATE)).distinct()
+    private val transientKeys=setOf(RequestWorkflow.PENDING_EMAIL,"requestEmailLeftApp","pendingSignatureAction","pendingSignatureRequest",
+        "pendingExcelExport","lastConfirmedEmailToken","reviewPendingFingerprint","reviewedRequestFingerprint",LedgerStore.RESTORE_HISTORY)
     private fun safeName(name:String)=name.matches(Regex("(?:receipt_[0-9]+\\.jpg|reimbursement_signature\\.png|signature_[a-zA-Z0-9_-]+\\.png)"))
     private fun safeExport(name:String)=name.matches(Regex("[A-Za-z0-9_-]+\\.(?:pdf|xls)"))
     fun export(context:Context,destination:Uri){
         RequestWorkflow(context).sync()
-        val prefs=context.getSharedPreferences("usage_data",Context.MODE_PRIVATE)
-        val data=JSONObject().put("format",2)
-        prefs.all.forEach{(k,v)->if(k in keys || k.startsWith("lastOdometer_"))data.put(k,v)}
+        val prefs=LedgerStore.prefs(context)
+        val data=JSONObject().put("format",3).put("databaseHistory",JSONArray(LedgerStore.historyJson(context)))
+        prefs.all.forEach{(k,v)->if(k !in transientKeys)data.put(k,v)}
         context.contentResolver.openOutputStream(destination,"wt")?.use{stream->ZipOutputStream(stream).use{zip->
             zip.putNextEntry(ZipEntry("data.json"));zip.write(data.toString().toByteArray());zip.closeEntry()
             fun add(file:File,path:String){zip.putNextEntry(ZipEntry(path));file.inputStream().use{it.copyTo(zip)};zip.closeEntry()}
@@ -54,8 +56,8 @@ object TrackerBackup {
                     zip.closeEntry();entry=zip.nextEntry
                 }
             }}?:error("Cannot open backup")
-            val sourceData=File(stage,"data.json");require(sourceData.isFile && sourceData.length()<5_000_000){"Backup data missing or too large"}
-            val data=JSONObject(sourceData.readText());require(data.optInt("format") in 1..2){"Unsupported backup format"}
+            val sourceData=File(stage,"data.json");require(sourceData.isFile && sourceData.length()<25_000_000){"Backup data missing or too large"}
+            val data=JSONObject(sourceData.readText());require(data.optInt("format") in 1..3){"Unsupported backup format"}
             for(k in listOf("trips","receipts","archives"))JSONArray(data.optString(k,"[]").ifBlank{"[]"})
             if(data.has(RequestWorkflow.STATE)){
                 val state=JSONObject(data.getString(RequestWorkflow.STATE));require(state.optInt("schema")==1)
@@ -67,8 +69,10 @@ object TrackerBackup {
                 if(value is String){
                     val name=Uri.parse(value).lastPathSegment.orEmpty()
                     if(safeName(name) && File(stage,"files/"+name).isFile){val f=File(context.filesDir,name);return if(value.startsWith("file:"))Uri.fromFile(f).toString()else f.absolutePath}
-                    if(value.startsWith("content:") && safeExport(name) && File(stage,"exports/"+name).isFile)
-                        return OfficialPurchaseRequisition.uri(context,File(context.filesDir,"exports/"+name)).toString()
+                    if(safeExport(name) && File(stage,"exports/"+name).isFile){
+                        val f=File(context.filesDir,"exports/"+name)
+                        return if(value.startsWith("content:"))OfficialPurchaseRequisition.uri(context,f).toString()else f.absolutePath
+                    }
                 }
                 return value
             }
@@ -84,12 +88,13 @@ object TrackerBackup {
                     val old=if(target.exists())File(rollback,folder+"/"+file.name).also{it.parentFile?.mkdirs();target.copyTo(it,true)}else null
                     installed.add(target to old);file.copyTo(target,true)
                 }
-                val prefs=context.getSharedPreferences("usage_data",Context.MODE_PRIVATE);val edit=prefs.edit()
-                (keys+listOf(RequestWorkflow.PENDING_EMAIL,"requestEmailLeftApp","pendingSignatureAction","pendingSignatureRequest","lastConfirmedEmailToken","reviewedRequestFingerprint")).forEach{edit.remove(it)}
+                val prefs=LedgerStore.prefs(context);val edit=prefs.edit()
+                prefs.all.keys.forEach{edit.remove(it)}
                 prefs.all.keys.filter{it.startsWith("lastOdometer_")}.forEach{edit.remove(it)}
-                data.keys().forEach{k->if(k in keys||k.startsWith("lastOdometer_"))when(val v=data.opt(k)){
-                    is Boolean->edit.putBoolean(k,v);else->edit.putString(k,v.toString())
+                data.keys().forEach{k->if(k !in transientKeys && k !in setOf("format","databaseHistory"))when(val v=data.opt(k)){
+                    is Boolean->edit.putBoolean(k,v);is Int->edit.putInt(k,v);is Long->edit.putLong(k,v);else->edit.putString(k,v.toString())
                 }}
+                edit.putString(LedgerStore.RESTORE_HISTORY,(data.optJSONArray("databaseHistory")?:JSONArray()).toString())
                 check(edit.commit()){"Could not save restored records"}
             }catch(e:Exception){installed.reversed().forEach{(f,old)->if(old!=null)old.copyTo(f,true)else f.delete()};throw e}
         }finally{stage.deleteRecursively()}

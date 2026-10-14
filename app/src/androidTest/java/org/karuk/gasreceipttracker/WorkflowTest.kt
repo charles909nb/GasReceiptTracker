@@ -25,7 +25,7 @@ import java.io.File
 class WorkflowTest {
     private val ins get()=InstrumentationRegistry.getInstrumentation()
     private val ctx get()=ins.targetContext
-    private val prefs get()=ctx.getSharedPreferences("usage_data",Context.MODE_PRIVATE)
+    private val prefs get()=LedgerStore.prefs(ctx)
     private var activity:MainActivity?=null
     private val out get()=ctx.getExternalFilesDir("verification")!!.apply{mkdirs()}
     private fun receipt():JSONObject{

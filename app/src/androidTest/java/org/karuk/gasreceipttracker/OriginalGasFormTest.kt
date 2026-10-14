@@ -50,7 +50,7 @@ class OriginalGasFormTest {
         assertTrue(files.excel.isFile);assertTrue(files.pdf.isFile)
         HSSFWorkbook(files.excel.inputStream()).use{w->
             val s=w.getSheet("Gas")
-            assertEquals("October 8, 2026",s.getRow(6).getCell(2).stringCellValue)
+            assertEquals(GasFormWorkbook.displayDate(java.time.LocalDate.now().toString()),s.getRow(6).getCell(2).stringCellValue)
             assertEquals("Sample Driver",s.getRow(12).getCell(2).stringCellValue)
             assertEquals("pay CC 1234",s.getRow(13).getCell(2).stringCellValue)
             assertEquals(8.765,s.getRow(18).getCell(1).numericCellValue,.000001)
