@@ -69,7 +69,7 @@ class MainActivity : Activity() {
         scroll.addView(body);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));label(title,24f)
         val nav=LinearLayout(this).apply{setBackgroundColor(Color.WHITE);setPadding(dp(4),dp(5),dp(4),dp(5))}
         for((caption,dest)in listOf("Trips" to "home","Fuel" to "fuel","Docs" to "sheets","Requests" to "requests","More" to "more")){
-            val selected=currentScreen==dest||(dest=="more"&&currentScreen in listOf("email","sign","backup","setup"))
+            val selected=currentScreen==dest||(dest=="more"&&currentScreen in listOf("email","sign","backup","setup"))||(dest=="requests"&&currentScreen in listOf("finance","history","mileage"))
             val button=TrackerStyle.button(this,caption,false){show(dest)}.apply{
                 textSize=12f;setPadding(0,dp(10),0,dp(10));minimumWidth=0;minWidth=0
                 background=TrackerStyle.shape(this@MainActivity,if(selected)TrackerStyle.blush else Color.WHITE,null,10)
@@ -673,120 +673,111 @@ class MainActivity : Activity() {
     }
     private fun receiptHistory(){
         draw("Saved fuel receipts")
-        label("Search locally saved receipts by station, purchase date, vehicle, amount, or request.",14f)
-        val query=edit("Search receipts (blank shows all)")
-        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        body.addView(results)
-        fun refresh(){
-            results.removeAllViews()
-            try{
-                val matches=TrackerDatabase(this).use{it.receiptSearch(query.text.toString())}
-                if(matches.isEmpty()){
-                    results.addView(TrackerStyle.text(this,"No matching receipts. Saving a fuel purchase makes it searchable here.",14f))
-                }else{
-                    results.addView(TrackerStyle.text(this,matches.size.toString()+" matching receipt(s), saved on this phone",13f,false,TrackerStyle.muted))
-                    for(r in matches){
-                        results.addView(TrackerStyle.card(this,
-                            r.station.ifBlank{"Fuel receipt"}+"  /  $"+r.total,
-                            r.date+"  |  Vehicle "+r.vehicle+"  |  "+r.gallons+" gal\n"+r.reference+"  /  "+r.requestTitle))
-                        results.addView(TrackerStyle.button(this,"View highlighted receipt and card verification") {
-                            checkReceipt(r.payload)
-                        })
-                        results.addView(TrackerStyle.button(this,"Review saved receipt") {
-                            android.app.AlertDialog.Builder(this).setTitle(r.station+" - "+r.date)
-                                .setMessage("Request: "+r.reference+"\nVehicle: "+r.vehicle+
-                                    "\nGallons: "+r.gallons+"\nPrice per gallon: $"+r.price+
-                                    "\nPaid total: $"+r.total+"\nFuel type: "+r.fuelType+
-                                    "\nOriginal photo and corrected fields remain saved offline.")
-                                .setPositiveButton("View original photo"){_,_->
-                                    try{
-                                        val stored=Uri.parse(r.imageUri)
-                                        val viewUri=if(stored.scheme=="file"){
-                                            val source=java.io.File(requireNotNull(stored.path))
-                                            val dest=java.io.File(filesDir,"exports/"+source.name).apply{parentFile?.mkdirs()}
-                                            source.copyTo(dest,true)
-                                            OfficialPurchaseRequisition.uri(this,dest)
-                                        }else stored
-                                        startActivity(Intent(Intent.ACTION_VIEW)
-                                            .setDataAndType(viewUri,"image/*")
-                                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                                    }catch(e:Exception){alert("Receipt photo unavailable: "+e.message)}
-                                }.setNeutralButton("Read OCR text"){_,_->
-                                    android.app.AlertDialog.Builder(this).setTitle("Saved OCR text")
-                                        .setMessage(r.rawText.ifBlank{"No OCR text was saved for this receipt."})
-                                        .setPositiveButton("Close",null).show()
-                                }.setNegativeButton("Done",null).show()
-                        })
-                    }
-                }
-            }catch(e:Exception){
-                results.addView(TrackerStyle.text(this,"Search failed: "+e.message,14f))
+        label("Choose a recorded date, amount, vehicle, or PR number. Date ranges and nearby amounts update instantly.",14f)
+        val saved=TrackerDatabase(this).use{it.receiptSearch("",5000)}
+        val states=mutableMapOf<String,String>()
+        val orders=workflow.all()
+        for(i in 0 until orders.length()){
+            val request=orders.getJSONObject(i)
+            states[request.optString("id")]=when(request.optString("status")){
+                "sent"->"Sent"
+                "archived"->"Archived"
+                else->"Draft"
             }
         }
-        query.addTextChangedListener(object:TextWatcher{
-            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
-            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){refresh()}
-            override fun afterTextChanged(s:Editable?){}
-        })
-        refresh()
+        val items=saved.mapIndexed{i,r->
+            ArchiveSearchRow(
+                id=i.toString(),date=r.date,amount=GuidedArchiveSearch.parseAmount(r.total)?:0.0,
+                vehicle=r.vehicle,reference=r.reference,status=states[r.requestId]?:"Draft",
+                title=r.requestTitle
+            )
+        }
+        val lookup=saved.indices.associate{i->i.toString() to saved[i]}
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        GuidedArchiveSearchPanel(this,body,items){found->
+            results.removeAllViews()
+            results.addView(TrackerStyle.text(this,
+                "${found.size} matching saved receipt(s)",15f,true,TrackerStyle.ink))
+            if(found.isEmpty())results.addView(TrackerStyle.text(this,
+                "There are no recorded purchases matching those selections.",14f,false,TrackerStyle.muted))
+            for(row in found.take(60)){
+                val r=lookup[row.id]?:continue
+                results.addView(TrackerStyle.card(this,
+                    (r.station.ifBlank{"Fuel receipt"})+"  /  "+GuidedArchiveSearch.money(row.amount),
+                    r.date+" • Vehicle "+r.vehicle+" • "+r.gallons+" gal\n"+
+                        r.reference+" • "+row.status))
+                results.addView(TrackerStyle.button(this,"Review saved receipt"){
+                    checkReceipt(r.payload)
+                })
+                results.addView(TrackerStyle.button(this,"View transaction details"){
+                    android.app.AlertDialog.Builder(this).setTitle(r.station+" — "+r.date)
+                        .setMessage("Request: "+r.reference+"\nVehicle: "+r.vehicle+
+                            "\nGallons: "+r.gallons+"\nPrice per gallon: $"+r.price+
+                            "\nTotal: $"+r.total+"\nStatus: "+row.status+
+                            "\nThe original receipt image and corrected values remain saved.")
+                        .setPositiveButton("Close",null)
+                        .setNeutralButton("Read saved OCR text"){_,_->
+                            android.app.AlertDialog.Builder(this).setTitle("Saved OCR text")
+                                .setMessage(r.rawText.ifBlank{"No OCR text was saved for this receipt."})
+                                .setPositiveButton("Close",null).show()
+                        }.show()
+                })
+            }
+            if(found.size>60)results.addView(TrackerStyle.text(this,
+                "Showing the first 60 records. Narrow the date, amount, or vehicle to see the others.",13f,false,TrackerStyle.muted))
+        }
+        body.addView(results)
     }
     private fun financePackets(){
         draw("Finance packet archive")
-        label("Search confirmed-sent complete PDFs. Default: newest purchase date first.",14f)
-        val search=edit("Purchase date, amount, vehicle, PR number or title")
-        val sorts=listOf("Newest purchase first","Oldest purchase first","Amount: highest first","Amount: lowest first")
-        val picker=Spinner(this)
-        picker.adapter=ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,sorts)
-        body.addView(picker)
+        label("Find confirmed-sent packets by an exact date, a date range, a nearby amount, a vehicle or PR number. Suggestions come from your saved transactions.",14f)
+        val packetList=FinancePacketArchive.entries(this)
+        val rows=packetList.mapIndexed{i,p->
+            ArchiveSearchRow(i.toString(),p.purchaseDate,p.amount,p.vehicle,
+                p.reference,"Sent",p.title)
+        }
+        val packets=packetList.indices.associate{i->i.toString() to packetList[i]}
         val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        body.addView(results)
-        fun refresh(){
+        GuidedArchiveSearchPanel(this,body,rows){found->
             results.removeAllViews()
-            try{
-                val matches=FinancePacketArchive.filter(FinancePacketArchive.entries(this),
-                    search.text.toString(),picker.selectedItem?.toString().orEmpty())
-                results.addView(TrackerStyle.text(this,matches.size.toString()+
-                    " saved transaction(s) with complete Finance packets.",13f,false,TrackerStyle.muted))
-                for(packet in matches){
-                    val amount=String.format(Locale.US,"$%.2f",packet.amount)
-                    results.addView(TrackerStyle.card(this,packet.purchaseDate+"  "+amount,
-                        packet.reference+" • Vehicle "+packet.vehicle+"\n"+packet.title+
-                        "\nSent to Finance: "+packet.sentDate))
-                    val file=FinancePacketArchive.savedFile(this,packet)
-                    if(file==null){
-                        results.addView(TrackerStyle.text(this,
-                            "PDF not found locally. Restore the app backup to recover it.",13f,false,TrackerStyle.red))
-                        continue
-                    }
-                    val uri=OfficialPurchaseRequisition.uri(this,file)
-                    results.addView(TrackerStyle.button(this,"Open full PDF packet"){previewPdf(uri)})
-                    results.addView(TrackerStyle.button(this,"Resend saved packet by email"){
-                        prepareEmail(uri,JSONArray().put(packet.receipt),false,
-                            JSONObject().put("reference",packet.reference).put("title",packet.title).put("kind","Gas"))
-                    })
-                    results.addView(TrackerStyle.button(this,"Download / export PDF"){
-                        val name=packet.reference+"_Finance_"+packet.purchaseDate.replace(Regex("[^0-9A-Za-z]"),"_")+".pdf"
-                        prefs.edit().putString("pendingFinancePdfExport",file.absolutePath)
-                            .putString("pendingFinancePdfName",name).commit()
-                        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
-                            .setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
-                            .putExtra(Intent.EXTRA_TITLE,name),212)
-                    })
+            results.addView(TrackerStyle.text(this,
+                "${found.size} matching complete Finance packet(s)",15f,true,TrackerStyle.ink))
+            if(found.isEmpty())results.addView(TrackerStyle.text(this,
+                "No saved Finance packets match that date or amount. Try widening the range.",14f,false,TrackerStyle.muted))
+            for(row in found.take(45)){
+                val packet=packets[row.id]?:continue
+                results.addView(TrackerStyle.card(this,
+                    packet.purchaseDate+"  "+GuidedArchiveSearch.money(packet.amount),
+                    packet.reference+" • Vehicle "+packet.vehicle+"\n"+
+                        packet.title+"\nSent to Finance: "+packet.sentDate))
+                val file=FinancePacketArchive.savedFile(this,packet)
+                if(file==null){
+                    results.addView(TrackerStyle.text(this,
+                        "The archived PDF is missing on this phone. Restore a complete app backup to recover it.",13f,false,TrackerStyle.red))
+                    continue
                 }
-                if(matches.isEmpty())results.addView(TrackerStyle.text(this,
-                    "No matching sent packets. Drafts are not labeled as sent.",14f))
-            }catch(e:Exception){results.addView(TrackerStyle.text(this,"Archive error: "+e.message,14f))}
+                val uri=OfficialPurchaseRequisition.uri(this,file)
+                results.addView(TrackerStyle.button(this,"Open complete PDF packet"){
+                    previewPdf(uri)
+                })
+                results.addView(TrackerStyle.button(this,"Email saved packet again"){
+                    prepareEmail(uri,JSONArray().put(packet.receipt),false,
+                        JSONObject().put("reference",packet.reference).put("title",packet.title).put("kind","Gas"))
+                })
+                results.addView(TrackerStyle.button(this,"Download / export PDF"){
+                    val name=packet.reference+"_Finance_"+
+                        packet.purchaseDate.replace(Regex("[^0-9A-Za-z]"),"_")+".pdf"
+                    prefs.edit().putString("pendingFinancePdfExport",file.absolutePath)
+                        .putString("pendingFinancePdfName",name).commit()
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
+                        .putExtra(Intent.EXTRA_TITLE,name),212)
+                })
+            }
+            if(found.size>45)results.addView(TrackerStyle.text(this,
+                "Showing the first 45 packets. Choose a more specific recorded date or amount to see the others.",13f,false,TrackerStyle.muted))
         }
-        search.addTextChangedListener(object:TextWatcher{
-            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
-            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){refresh()}
-            override fun afterTextChanged(s:Editable?){}
-        })
-        picker.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
-            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:android.view.View?,position:Int,id:Long){refresh()}
-            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
-        }
-        refresh()
+        body.addView(results)
     }
     private fun vehicleMileage(){
         draw("Vehicle fuel economy")

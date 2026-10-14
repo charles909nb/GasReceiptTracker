@@ -10,14 +10,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.2-finance-mileage"
+        versionCode = 14
+        versionName = "2.3-guided-search"
     }
     buildTypes {
         getByName("debug") {
             // Keep the existing preview identity and storage area.
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
+        }
+        getByName("release") {
+            // The privately signed release replaces the preview *in place* once
+            // its signing certificate is established. No new app identity.
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            isMinifyEnabled = false
+            // No release keystore or password is ever committed to GitHub.
+            // CI publishes an unsigned release; signing happens privately.
         }
     }
     compileOptions {
