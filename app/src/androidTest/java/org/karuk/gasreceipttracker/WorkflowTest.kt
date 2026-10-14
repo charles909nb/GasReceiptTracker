@@ -173,8 +173,16 @@ class WorkflowTest {
         prefs.edit().putBoolean("requestEmailLeftApp",true).commit()
         launch();Thread.sleep(500);screenshot("UI_Email_Confirmation")
         assertEquals(id,w.current().getString("id"));assertEquals("draft",w.current().getString("status"))
-        val buttons=ins.uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("Not sent")
-        assertTrue(buttons.isNotEmpty());buttons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        assertNotNull("The queued email must still exist",w.pendingEmail())
+        var buttons=ins.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("Not sent").orEmpty()
+        val start=android.os.SystemClock.uptimeMillis()
+        while(buttons.isEmpty() && android.os.SystemClock.uptimeMillis()-start<6000){
+            Thread.sleep(200)
+            buttons=ins.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("Not sent").orEmpty()
+        }
+        assertTrue("Expected automatic email confirmation on return; pending="+w.pendingEmail()+
+            " leftApp="+prefs.getBoolean("requestEmailLeftApp",false),buttons.isNotEmpty())
+        buttons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
         Thread.sleep(500);assertNull(w.pendingEmail());assertEquals(id,w.current().getString("id"))
     }
 }
