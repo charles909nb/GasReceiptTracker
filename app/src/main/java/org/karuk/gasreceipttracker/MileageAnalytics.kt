@@ -44,8 +44,8 @@ object MileageAnalytics {
             fromReceipt(saved.id,saved.payload)
         }
     }
-    fun vehicleNumbers(context:Context):List<String>=load(context).map{it.vehicle}
-        .distinct().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER){it})
+    fun vehicleNumbers(context:Context):List<String> =
+        load(context).map{it.vehicle}.distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
 
     fun report(vehicle:String,stops:List<Stop>):Report{
         val rows=stops.filter{it.vehicle==vehicle}
