@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.*
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 /** Native controls and shapes only; no large artwork or remote dependencies. */
 object TrackerStyle {
@@ -37,6 +38,7 @@ object TrackerStyle {
         setTextColor(if (primary) Color.WHITE else red)
         background = RippleDrawable(ColorStateList.valueOf(Color.argb(25, 0, 0, 0)),
             shape(c, if (primary) red else Color.WHITE, if (primary) null else line), null)
+        stateListAnimator = null; elevation = 0f
         minHeight = dp(c, 50); minimumHeight = dp(c, 50)
         setPadding(dp(c, 14), dp(c, 10), dp(c, 14), dp(c, 10))
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(c, 5), 0, dp(c, 5)) }
@@ -57,9 +59,16 @@ object TrackerStyle {
         addView(text(c, title, 17f, true, if (emphasis) red else ink))
         if (detail.isNotBlank()) addView(text(c, detail, 14f, false, muted).apply { setPadding(0, dp(c, 6), 0, 0) })
     }
-    fun insets(a: Activity, root: View) {
-        a.window.statusBarColor = red
+    fun systemBars(a: Activity, root: View) {
+        a.window.statusBarColor = background
         a.window.navigationBarColor = Color.WHITE
+        WindowInsetsControllerCompat(a.window, root).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
+    }
+    fun insets(a: Activity, root: View) {
+        systemBars(a, root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
             val i = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             view.setPadding(i.left, i.top, i.right, i.bottom); windowInsets

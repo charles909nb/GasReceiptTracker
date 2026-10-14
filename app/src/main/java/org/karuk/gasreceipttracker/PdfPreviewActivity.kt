@@ -41,7 +41,7 @@ class PdfPreviewActivity : Activity() {
         image=ImageView(this).apply{setBackgroundColor(Color.WHITE);adjustViewBounds=true}
         val vertical=ScrollView(this);val horizontal=HorizontalScrollView(this)
         horizontal.addView(image);vertical.addView(horizontal);root.addView(vertical,LinearLayout.LayoutParams(-1,0,1f))
-        setContentView(root);ViewCompat.requestApplyInsets(root)
+        setContentView(root);TrackerStyle.systemBars(this,root);ViewCompat.requestApplyInsets(root)
         val uri=intent.data
         if(uri==null){status.text="No PDF was selected";return}
         worker.execute{
