@@ -74,7 +74,7 @@ class WorkflowTest {
     }
     @Test fun canceledEmailKeepsRequestAndDoesNotArchive(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w);val id=w.current().getString("id")
-        w.stageEmail("content://test/packet.pdf","Test","finance@example.com","")
+        w.stageEmail(testPacketUri(),"Test","finance@example.com","")
         assertEquals(id,w.current().getString("id"));assertEquals("draft",w.current().getString("status"))
         w.cancelEmail();assertEquals(id,w.current().getString("id"));assertEquals(0,JSONArray(prefs.getString("archives","[]")).length())
     }
@@ -90,6 +90,18 @@ class WorkflowTest {
         assertEquals("61.35",history.getJSONObject(0).getJSONArray("receipts").getJSONObject(0).getString("cost"))
         assertFalse(w.signed());assertNull(w.pendingEmail())
         w.confirmSent(pending.getString("token"));assertEquals(1,JSONArray(prefs.getString("archives","[]")).length())
+    }
+    private fun testPacketUri():String {
+        val file=java.io.File(ctx.filesDir,"exports/workflow_test_packet.pdf").apply{parentFile?.mkdirs()}
+        if(!file.isFile){
+            val doc=android.graphics.pdf.PdfDocument()
+            val page=doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(612,792,1).create())
+            page.canvas.drawText("Complete test packet",30f,40f,android.graphics.Paint())
+            doc.finishPage(page)
+            file.outputStream().use{doc.writeTo(it)}
+            doc.close()
+        }
+        return OfficialPurchaseRequisition.uri(ctx,file).toString()
     }
     @Test fun sentLastRequestAutomaticallyCreatesExactlyOneNewPr(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w)
