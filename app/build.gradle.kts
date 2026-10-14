@@ -10,10 +10,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.9-workflow"
+        versionCode = 11
+        versionName = "1.10-updateable"
+    }
+    signingConfigs {
+        create("stableRelease") {
+            // CI injects the same secure key every build; never publish a
+            // GitHub-runner debug certificate as an upgradeable app.
+            val filePath = providers.environmentVariable("GRT_SIGNING_KEYSTORE").orNull
+            if(filePath != null) {
+                storeFile = file(filePath)
+                storePassword = providers.environmentVariable("GRT_SIGNING_STORE_PASSWORD").orNull
+                keyAlias = providers.environmentVariable("GRT_SIGNING_KEY_ALIAS").orNull
+                keyPassword = providers.environmentVariable("GRT_SIGNING_KEY_PASSWORD").orNull
+            }
+        }
     }
     buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("stableRelease")
+            isMinifyEnabled = false
+        }
         getByName("debug") {
             // Keep the existing preview identity and storage area.
             applicationIdSuffix = ".preview"
