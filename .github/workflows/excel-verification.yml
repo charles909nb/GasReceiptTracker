@@ -53,6 +53,7 @@ jobs:
           pathlib.Path('verified-source-paths.txt').write_text('\n'.join(paths)+'\n')
           print('Original XLS embedded; 12 exact source files verified.')
           PY
+          python3 tools/finalize-excel-payload.py
           mkdir -p app/src/main/res/drawable
           base64 -d app/icon-approved.b64 > app/src/main/res/drawable/approved_app_icon.png
       - name: Compile app and instrumented tests
