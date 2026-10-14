@@ -255,6 +255,7 @@ class MainActivity : Activity() {
             intent.putExtra(ReceiptReviewActivity.EXTRA_HISTORY,true)
             intent.putExtra(ReceiptReviewActivity.EXTRA_RECEIPT,saved.toString())
         }
+        prefs.edit().putString("receiptReviewReturn",if(saved==null)"fuel"else "history").commit()
         startActivityForResult(intent,211)
     }
     private fun fuel(){
@@ -377,6 +378,11 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android")
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==211){
+            val back=pref("receiptReviewReturn").ifBlank{"fuel"}
+            prefs.edit().remove("receiptReviewReturn").commit()
+            show(back);return
+        }
         if(requestCode==209){offerEmailConfirmation();return}
         if(requestCode==210){
             if(resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current()))
@@ -409,22 +415,16 @@ class MainActivity : Activity() {
                 val target=java.io.File(filesDir,"receipt_"+System.currentTimeMillis()+".jpg")
                 contentResolver.openInputStream(uri).use{input->requireNotNull(input){"Receipt image cannot be opened"};target.outputStream().use{input.copyTo(it)}}
                 val saved=Uri.fromFile(target)
-                prefs.edit().putString("pending_receipt",saved.toString())
-                    .remove("ocr_station").remove("ocr_date").remove("ocr_gallons").remove("ocr_price")
-                    .remove("ocr_total").remove("ocr_raw").remove("ocr_fuel_type").remove("ocr_card_last4")
-                    .remove("ocr_time").remove("ocr_warn").commit()
+                val clearing=prefs.edit().putString("pending_receipt",saved.toString())
+                RequestWorkflow.DRAFT_KEYS.filter{it.startsWith("ocr_")}.forEach{clearing.remove(it)}
+                check(clearing.commit()){"Receipt draft could not be saved"}
                 workflow.sync()
                 ReceiptReader.scan(this,saved){scan->runOnUiThread{
                     if(workflow.current().getString("id")!=requestId)return@runOnUiThread
-                    if(scan!=null)prefs.edit().putString("ocr_station",scan.station).putString("ocr_date",scan.date).putString("ocr_gallons",scan.gallons)
-                        .putString("ocr_price",scan.price).putString("ocr_total",scan.total)
-                        .putString("ocr_raw",scan.rawText.take(35000)).putString("ocr_fuel_type",scan.fuelType)
-                        .putString("ocr_card_last4",scan.cardLast4).putString("ocr_time",scan.time)
-                        .putString("ocr_warn",scan.warnings.joinToString("; ")).commit()
-                    workflow.sync();show("fuel")
-                    alert(if(scan==null)"OCR could not read the receipt; enter details manually"
-                          else if(scan.warnings.isNotEmpty())"OCR needs review: "+scan.warnings.joinToString("; ")
-                          else "Found "+scan.gallons+" gallons, $"+scan.price+"/gal, total $"+scan.total)
+                    try{
+                        saveOcrResult(scan)
+                        checkReceipt()
+                    }catch(e:Exception){alert("Receipt verification could not open: "+e.message)}
                 }}
             }catch(e:Exception){alert("Could not save receipt: "+e.message)}
         }
