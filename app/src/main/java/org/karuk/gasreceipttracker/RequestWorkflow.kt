@@ -186,8 +186,9 @@ class RequestWorkflow(private val context: Context) {
         val a = find(s, pending.getString("requestId")) ?: error("Request not found")
         check(fingerprint(a) == pending.getString("fingerprint")) { "This request changed after preparing the email. Keep it open, review the changes and prepare a new email." }
         check(a.optString("status") == "draft") { "Request already completed." }
+        val archiveUri=FinancePacketArchive.stableCopy(context,a.getString("id"),android.net.Uri.parse(pending.getString("uri")))
         a.put("status", "sent").put("sentAt", stamp()).put("sendConfirmation", "confirmed_by_user")
-            .put("sentPdfUri", pending.getString("uri")).put("email", pending)
+            .put("sentPdfUri", archiveUri.toString()).put("email", pending)
         val archives = array("archives")
         archives.put(copy(a).put("archivedAt", stamp()))
         moveToNext(s)
