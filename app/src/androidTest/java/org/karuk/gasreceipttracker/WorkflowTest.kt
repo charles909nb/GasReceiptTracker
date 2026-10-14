@@ -81,12 +81,20 @@ class WorkflowTest {
     @Test fun sentConfirmationSelectsQueuedWorkOrderAndKeepsExactHistory(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w);val old=w.current()
         val next=w.create("Vehicle service visit","Work order",false)
-        val pending=w.stageEmail("content://test/packet.pdf","Test subject","finance@example.com","tester@example.com")
+        val pending=w.stageEmail(testPacketUri(),"Test subject","finance@example.com","tester@example.com")
         val active=w.confirmSent(pending.getString("token"))
         assertEquals(next.getString("id"),active.getString("id"));assertEquals("Work order",active.getString("kind"))
         val history=JSONArray(prefs.getString("archives","[]"));assertEquals(1,history.length())
         assertEquals(old.getString("id"),history.getJSONObject(0).getString("id"))
         assertEquals("confirmed_by_user",history.getJSONObject(0).getString("sendConfirmation"))
+        val sent=FinancePacketArchive.entries(ctx)
+        assertEquals(1,sent.size)
+        assertEquals("61.35",sent.single().receipt.getString("cost"))
+        val archived=FinancePacketArchive.savedFile(ctx,sent.single())
+        assertNotNull("Confirmed sent packet must remain as an actual PDF",archived)
+        assertTrue(archived!!.readBytes().take(4).toByteArray().contentEquals("%PDF".toByteArray()))
+        assertTrue(archived.name.startsWith("Finance_Sent_"))
+        assertEquals(1,FinancePacketArchive.filter(sent,"61.35","Newest purchase first").size)
         assertEquals("61.35",history.getJSONObject(0).getJSONArray("receipts").getJSONObject(0).getString("cost"))
         assertFalse(w.signed());assertNull(w.pendingEmail())
         w.confirmSent(pending.getString("token"));assertEquals(1,JSONArray(prefs.getString("archives","[]")).length())
@@ -105,7 +113,7 @@ class WorkflowTest {
     }
     @Test fun sentLastRequestAutomaticallyCreatesExactlyOneNewPr(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w)
-        val token=w.stageEmail("content://test/packet.pdf","Test","finance@example.com","").getString("token")
+        val token=w.stageEmail(testPacketUri(),"Test","finance@example.com","").getString("token")
         w.confirmSent(token);assertEquals("PR-00002",w.current().getString("reference"))
         assertEquals(0,w.current().getJSONArray("trips").length());assertEquals(0,w.current().getJSONArray("receipts").length())
         val restarted=RequestWorkflow(ctx);restarted.initialize();assertEquals(2,restarted.all().length())
@@ -113,7 +121,7 @@ class WorkflowTest {
     }
     @Test fun changedRequestCannotBeAccidentallyConfirmedAsSent(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w)
-        val token=w.stageEmail("content://test/packet.pdf","Test","finance@example.com","").getString("token")
+        val token=w.stageEmail(testPacketUri(),"Test","finance@example.com","").getString("token")
         prefs.edit().putString("driver","Changed driver").commit()
         try{w.confirmSent(token);fail("Changed request closed")}catch(expected:IllegalStateException){assertTrue(expected.message!!.contains("changed"))}
         assertEquals("draft",w.current().getString("status"));assertNotNull(w.pendingEmail())
@@ -122,7 +130,7 @@ class WorkflowTest {
         seed(open=true);val w=RequestWorkflow(ctx);w.initialize();sign(w)
         try{w.create("Other travel","Travel");fail("Open trip switched")}catch(expected:IllegalStateException){}
         val queued=w.create("Later travel","Travel",false);assertNotEquals(queued.getString("id"),w.current().getString("id"))
-        try{w.stageEmail("content://test/packet.pdf","Test","finance@example.com","");fail("Open trip sent")}catch(expected:IllegalStateException){}
+        try{w.stageEmail(testPacketUri(),"Test","finance@example.com","");fail("Open trip sent")}catch(expected:IllegalStateException){}
     }
     @Test fun backupRoundTripPreservesQueueSignaturesAndCc(){
         seed();val w=RequestWorkflow(ctx);w.initialize();val sig=sign(w);w.create("Next travel","Travel",false)
@@ -181,7 +189,7 @@ class WorkflowTest {
     }
     @Test fun returningFromEmailOffersConfirmationWithoutAutomaticallyClosing(){
         seed();val w=RequestWorkflow(ctx);w.initialize();sign(w);val id=w.current().getString("id")
-        w.stageEmail("content://test/packet.pdf","Test","finance@example.com","")
+        w.stageEmail(testPacketUri(),"Test","finance@example.com","")
         prefs.edit().putBoolean("requestEmailLeftApp",true).commit()
         val a=launch()
         assertEquals(id,w.current().getString("id"));assertEquals("draft",w.current().getString("status"))
