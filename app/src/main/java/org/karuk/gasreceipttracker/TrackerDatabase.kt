@@ -126,14 +126,14 @@ class TrackerDatabase(context: Context) : SQLiteOpenHelper(context, "fuel_record
             .use { if (it.moveToFirst()) it.getString(0) else null }
 
     @Synchronized fun receiptSearch(query: String, maxResults: Int = 60): List<SavedReceipt> {
-        val term = "%" + query.trim().replace("%", "\\%").replace("_", "\\_") + "%"
+        val term = "%" + query.trim().replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
         val sql = """SELECT f.id, f.request_id, q.reference, q.title, f.station, f.receipt_date,
             f.vehicle, f.gallons, f.unit_price, f.total, f.fuel_type, f.image_uri, f.raw_ocr, f.payload
             FROM fuel_receipts f LEFT JOIN requests q ON f.request_id=q.id
-            WHERE (?='' OR f.station LIKE ? ESCAPE '\\' OR f.receipt_date LIKE ? ESCAPE '\\'
-                 OR f.vehicle LIKE ? ESCAPE '\\' OR f.total LIKE ? ESCAPE '\\'
-                 OR f.fuel_type LIKE ? ESCAPE '\\' OR q.reference LIKE ? ESCAPE '\\'
-                 OR q.title LIKE ? ESCAPE '\\')
+            WHERE (?='' OR f.station LIKE ? ESCAPE '!' OR f.receipt_date LIKE ? ESCAPE '!'
+                 OR f.vehicle LIKE ? ESCAPE '!' OR f.total LIKE ? ESCAPE '!'
+                 OR f.fuel_type LIKE ? ESCAPE '!' OR q.reference LIKE ? ESCAPE '!'
+                 OR q.title LIKE ? ESCAPE '!')
             ORDER BY f.modified_at DESC, f.receipt_date DESC LIMIT ?"""
         val params = arrayOf(if(query.trim().isEmpty()) "" else query.trim(), term, term, term, term, term, term, term, maxResults.toString())
         val records = mutableListOf<SavedReceipt>()
