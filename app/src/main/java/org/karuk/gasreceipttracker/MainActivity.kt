@@ -580,8 +580,8 @@ class MainActivity : Activity() {
             }
         }
     }
-    private fun renderTemplate(template:String,receipt:JSONObject):String{
-        val req=workflow.current()
+    private fun renderTemplate(template:String,receipt:JSONObject,request:JSONObject?=null):String{
+        val req=request?:workflow.current()
         val values=mapOf("{prNumber}" to req.optString("reference"),"{requestTitle}" to req.optString("title"),"{requestType}" to req.optString("kind"),
             "{date}" to receipt.optString("date"),"{vehicle}" to receipt.optString("vehicle",pref("vehicle")),"{driver}" to pref("driver"),
             "{program}" to pref("department"),"{station}" to receipt.optString("station"),"{amount}" to receipt.optString("cost"),
@@ -615,7 +615,7 @@ class MainActivity : Activity() {
         }
     }
     private fun sendPacket(uri:Uri,receipts:JSONArray){prepareEmail(uri,receipts,false)}
-    private fun prepareEmail(uri:Uri,receipts:JSONArray,completeRequest:Boolean=true){
+    private fun prepareEmail(uri:Uri,receipts:JSONArray,completeRequest:Boolean=true,archive:JSONObject?=null){
         val receipt=receipts.optJSONObject(0)?:JSONObject()
         val form=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(8),dp(18),dp(8))}
         fun input(title:String,value:String,multi:Boolean=false):EditText{
@@ -626,8 +626,8 @@ class MainActivity : Activity() {
         val to=input("To",pref("emailTo"));val cc=input("Additional CC",pref("emailCc"))
         val self=CheckBox(this).apply{text="CC myself"+(if(pref("myEmail").isNotBlank())" ("+pref("myEmail")+")"else " (add your email in Profile)")
             isChecked=prefs.getBoolean("ccSelf",true)&&pref("myEmail").isNotBlank()};form.addView(self)
-        val subject=input("Subject",renderTemplate(prefs.getString("emailSubject","Gas Receipt {date} - Pay Credit Card {cardLast4}").orEmpty(),receipt))
-        val message=input("Message",renderTemplate(prefs.getString("emailBody","Attached: {prNumber}, vehicle {vehicle}. Amount: \u0024{amount}. Gallons: {gallons}.").orEmpty(),receipt),true)
+        val subject=input("Subject",renderTemplate(prefs.getString("emailSubject","Gas Receipt {date} - Pay Credit Card {cardLast4}").orEmpty(),receipt,archive))
+        val message=input("Message",renderTemplate(prefs.getString("emailBody","Attached: {prNumber}, vehicle {vehicle}. Amount: \u0024{amount}. Gallons: {gallons}.").orEmpty(),receipt,archive),true)
         form.addView(TrackerStyle.text(this,"PDF attached. Nothing is sent until you press Send in your email app.",13f,false,TrackerStyle.muted))
         val scroll=ScrollView(this);scroll.addView(form)
         val dialog=android.app.AlertDialog.Builder(this).setTitle("Review email & recipients").setView(scroll).setNegativeButton("Not now",null).setPositiveButton("Open email",null).create()
@@ -761,7 +761,8 @@ class MainActivity : Activity() {
                     val uri=OfficialPurchaseRequisition.uri(this,file)
                     results.addView(TrackerStyle.button(this,"Open full PDF packet"){previewPdf(uri)})
                     results.addView(TrackerStyle.button(this,"Resend saved packet by email"){
-                        prepareEmail(uri,JSONArray().put(packet.receipt),false)
+                        prepareEmail(uri,JSONArray().put(packet.receipt),false,
+                            JSONObject().put("reference",packet.reference).put("title",packet.title).put("kind","Gas"))
                     })
                     results.addView(TrackerStyle.button(this,"Download / export PDF"){
                         val name=packet.reference+"_Finance_"+packet.purchaseDate.replace(Regex("[^0-9A-Za-z]"),"_")+".pdf"
