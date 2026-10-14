@@ -14,9 +14,9 @@ class ReceiptTextParserTest {
             1801 Ft Jones Rd.
             Legend 295 Inc Chevr
             YREKA, CA
-            10/07/2026 843651442
+            10/07/2026 012345678
             04:22:54 PM
-            XXXXXXXXXXXX5530
+            XXXXXXXXXXXX5678
             VISA
             PUMP# 5
             UNLEAD REG    8.765G
@@ -32,7 +32,7 @@ class ReceiptTextParserTest {
         assertEquals("8.765",result.gallons)
         assertEquals("6.9993",result.price)
         assertEquals("61.35",result.total)
-        assertEquals("5530",result.cardLast4)
+        assertEquals("5678",result.cardLast4)
         assertEquals("UNLEAD REG",result.fuelType)
         assertTrue(result.warnings.toString(),result.warnings.isEmpty())
     }
