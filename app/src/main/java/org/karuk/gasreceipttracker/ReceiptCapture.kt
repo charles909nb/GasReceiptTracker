@@ -55,36 +55,25 @@ class SignaturePad(context: Context) : View(context) {
 data class FuelScan(
     val station: String, val date: String, val gallons: String, val price: String, val total: String,
     val rawText: String, val fuelType: String = "", val cardLast4: String = "", val time: String = "",
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(), val cardType: String = "",
+    val evidence: List<ReceiptEvidence> = emptyList()
 )
 
-/** OCR reads locally. The driver reviews extracted values before saving. */
+/** Two offline OCR passes can contribute word boxes; do not fabricate an
+ * overlay for a manually edited value or an unreadable field. */
 object ReceiptReader {
     private fun quality(s: FuelScan): Int =
-        listOf(s.gallons, s.price, s.total).count { it.isNotBlank() } * 10 +
-            listOf(s.date, s.station).count { it.isNotBlank() } - s.warnings.size
+        listOf(s.gallons, s.price, s.total).count { it.isNotBlank() } * 12 +
+            listOf(s.date, s.station, s.cardType, s.cardLast4).count { it.isNotBlank() } * 2 -
+            s.warnings.size
 
     private fun contrastEnhanced(context: Context, uri: Uri): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri).use { input ->
-            if (input == null) return null
-            BitmapFactory.decodeStream(input, null, bounds)
-        }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > 1800 || bounds.outHeight / sample > 2200) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val source = context.contentResolver.openInputStream(uri).use { input ->
-            if (input == null) return null
-            BitmapFactory.decodeStream(input, null, opts)
-        } ?: return null
+        val source = ReceiptImage.loadUpright(context, uri, 2200) ?: return null
         val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val contrast = 1.65f
-        val offset = -70f
         val matrix = android.graphics.ColorMatrix(floatArrayOf(
-            contrast, 0f, 0f, 0f, offset,
-            0f, contrast, 0f, 0f, offset,
-            0f, 0f, contrast, 0f, offset,
+            1.7f, 0f, 0f, 0f, -75f,
+            0f, 1.7f, 0f, 0f, -75f,
+            0f, 0f, 1.7f, 0f, -75f,
             0f, 0f, 0f, 1f, 0f
         ))
         val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
@@ -100,28 +89,35 @@ object ReceiptReader {
         fun finish(result: FuelScan?) { recognizer.close(); done(result) }
         try {
             val image = InputImage.fromFilePath(context, uri)
-            recognizer.process(image).addOnSuccessListener { text ->
-                val first = ReceiptTextParser.parse(text.text)
-                if (first.gallons.isNotBlank() && first.price.isNotBlank() && first.total.isNotBlank()) {
-                    finish(first)
+            recognizer.process(image).addOnSuccessListener { result ->
+                val first=ReceiptTextParser.parse(result.text)
+                val lines1=ReceiptEvidenceMatcher.capture(result, image.width, image.height, "original")
+                fun withEvidence(data:FuelScan, lines:List<ReceiptOcrLine>):FuelScan =
+                    data.copy(evidence=ReceiptEvidenceMatcher.locate(data,lines))
+
+                if(first.gallons.isNotBlank() && first.price.isNotBlank() &&
+                    first.total.isNotBlank() && first.cardType.isNotBlank() && first.cardLast4.isNotBlank()) {
+                    finish(withEvidence(first,lines1))
                     return@addOnSuccessListener
                 }
                 try {
-                    val enhanced = contrastEnhanced(context, uri)
-                    if (enhanced == null) { finish(first); return@addOnSuccessListener }
-                    recognizer.process(InputImage.fromBitmap(enhanced, 0)).addOnSuccessListener { extra ->
-                        val second = ReceiptTextParser.parse(extra.text)
-                        // Labels can be legible in different contrast passes.
-                        // Combine the source OCR strings to recover all printed fields.
-                        val combined = ReceiptTextParser.parse(first.rawText + "\n" + extra.text)
+                    val enhanced=contrastEnhanced(context,uri)
+                    if(enhanced==null){finish(withEvidence(first,lines1));return@addOnSuccessListener}
+                    val enhancedImage=InputImage.fromBitmap(enhanced,0)
+                    recognizer.process(enhancedImage).addOnSuccessListener { extra ->
+                        val second=ReceiptTextParser.parse(extra.text)
+                        val combined=ReceiptTextParser.parse(first.rawText+"\n"+extra.text)
+                        val winner=listOf(first,second,combined).maxByOrNull { quality(it) }?:first
+                        val lines2=ReceiptEvidenceMatcher.capture(extra,enhancedImage.width,enhancedImage.height,"enhanced")
+                        val output=withEvidence(winner,lines1+lines2)
                         enhanced.recycle()
-                        finish(listOf(first,second,combined).maxByOrNull { quality(it) } ?: first)
+                        finish(output)
                     }.addOnFailureListener {
                         enhanced.recycle()
-                        finish(first)
+                        finish(withEvidence(first,lines1))
                     }
-                } catch (_: Exception) { finish(first) }
-            }.addOnFailureListener { finish(null) }
-        } catch (_: Exception) { finish(null) }
+                }catch(_:Exception){finish(withEvidence(first,lines1))}
+            }.addOnFailureListener{finish(null)}
+        }catch(_:Exception){finish(null)}
     }
 }
