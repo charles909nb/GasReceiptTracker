@@ -44,7 +44,21 @@ class RequestWorkflow(private val context: Context) {
             .put("receipts", JSONArray()).put("signatureFile", "")
     }
     @Synchronized fun initialize() {
-        if (pref(STATE).isNotBlank()) { load(); return }
+        if (pref(STATE).isNotBlank()) {
+            val existing = load()
+            TrackerDatabase(context).use { it.saveState(existing, prefs) }
+            return
+        }
+        // If preferences were lost but the SQLite database survived,
+        // restore the request queue rather than creating a blank form.
+        val fromDatabase = TrackerDatabase(context).use { it.recoverState() }
+        if (!fromDatabase.isNullOrBlank()) {
+            val recovered = JSONObject(fromDatabase)
+            require(recovered.optInt("schema") == 1) { "Unsupported request backup schema" }
+            active(recovered)
+            write(recovered, true)
+            return
+        }
         val s = JSONObject().put("schema", 1).put("nextNumber", 1).put("orders", JSONArray())
         val initial = blank(s)
         initial.put("trips", array("trips")).put("receipts", array("receipts")).put("drafts", fields(DRAFT_KEYS))
@@ -84,6 +98,8 @@ class RequestWorkflow(private val context: Context) {
         }
         extra?.invoke(e)
         check(e.commit()) { "The phone could not save the request. Nothing should be deleted; free some storage and retry." }
+        // Keep a transactionally indexed copy for offline searching and recovery.
+        TrackerDatabase(context).use { it.saveState(s, prefs) }
     }
     @Synchronized fun sync() { val s = load(); capture(s); write(s) }
     @Synchronized fun current(): JSONObject { val s = load(); capture(s); return copy(active(s)) }
@@ -107,13 +123,17 @@ class RequestWorkflow(private val context: Context) {
         if (activate && !hasWork(a) && a.optString("signatureFile").isBlank()) {
             a.put("title", title.trim()).put("kind", kind)
             if (kind == "Travel") a.getJSONObject("drafts").put("draftDestination", title.trim())
-            write(s, true); return copy(a)
+            write(s, true)
+            TrackerDatabase(context).use { it.log(a.getString("id"), "request_started", title.trim()) }
+            return copy(a)
         }
         val next = blank(s, title.trim(), kind)
         if (kind == "Travel") next.getJSONObject("drafts").put("draftDestination", title.trim())
         orders(s).put(next)
         if (activate) s.put("activeId", next.getString("id"))
-        write(s, activate); return copy(next)
+        write(s, activate)
+        TrackerDatabase(context).use { it.log(next.getString("id"), if(activate) "request_started" else "request_queued", title.trim()) }
+        return copy(next)
     }
     @Synchronized fun select(id: String) {
         val s = load(); capture(s)
@@ -130,6 +150,7 @@ class RequestWorkflow(private val context: Context) {
         source.copyTo(destination, overwrite = false)
         a.put("signatureFile", destination.absolutePath).put("signedAt", stamp())
         write(s, false) { it.putString("signatureFile", destination.absolutePath).remove("reviewedRequestFingerprint") }
+        TrackerDatabase(context).use { it.log(a.getString("id"), "signature_saved", "Handwritten signature captured") }
         return destination
     }
     fun signed(): Boolean = pref("signatureFile").let { it.isNotBlank() && File(it).isFile && File(it).length() > 0 }
@@ -168,6 +189,7 @@ class RequestWorkflow(private val context: Context) {
         moveToNext(s)
         write(s, true) { it.putString("archives", archives.toString()).remove(PENDING_EMAIL)
             .remove("requestEmailLeftApp").putString("lastConfirmedEmailToken", token) }
+        TrackerDatabase(context).use { it.log(a.getString("id"), "email_confirmed_sent", pending.optString("subject")) }
         return copy(active(s))
     }
     private fun moveToNext(s: JSONObject) {
@@ -184,5 +206,6 @@ class RequestWorkflow(private val context: Context) {
         a.put("status", "archived").put("archivedAt", stamp())
         val archive = array("archives"); archive.put(copy(a))
         moveToNext(s); write(s, true) { it.putString("archives", archive.toString()) }
+        TrackerDatabase(context).use { it.log(a.getString("id"), "archived_without_sending") }
     }
 }
