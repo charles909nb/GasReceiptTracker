@@ -53,7 +53,7 @@ object ReceiptLocalLearning {
     fun extract(field:String,raw:String):String {
         val text=raw.trim()
         return when(field){
-            "pump"->Regex("""(?<!\\d)\\d{1,3}(?!\\d)""").find(text)?.value?:""
+            "pump"->Regex("""(?<!\d)\d{1,3}(?!\d)""").find(text)?.value?:""
             "gallons"->Regex("""(\d{1,4}[.,]\d{1,3})""").find(text)?.value?.replace(',','.')?:""
             "price"->Regex("""(\d{1,3}[.,]\d{2,4})""").find(text)?.value?.replace(',','.')?:""
             "total"->Regex("""(\d{1,6}[.,]\d{2})""").findAll(text).lastOrNull()?.value?.replace(',','.')?:""
