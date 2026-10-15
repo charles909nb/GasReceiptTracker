@@ -31,7 +31,10 @@ old_debug_apk=$(mktemp /tmp/grt-old-XXXXXX.apk)
 cp app/build/outputs/apk/debug/app-debug.apk "$old_debug_apk"
 adb install -r "$old_debug_apk"
 adb shell run-as org.karuk.gasreceipttracker.preview mkdir -p files
-printf 'update-marker-preserved\n' | adb shell run-as org.karuk.gasreceipttracker.preview sh -c 'cat > files/upgrade_marker.txt'
+printf 'update-marker-preserved\n' > verification/upgrade_marker.txt
+adb push verification/upgrade_marker.txt /data/local/tmp/grt-upgrade-marker.txt
+adb shell run-as org.karuk.gasreceipttracker.preview cp /data/local/tmp/grt-upgrade-marker.txt files/upgrade_marker.txt
+adb shell run-as org.karuk.gasreceipttracker.preview cat files/upgrade_marker.txt | grep -q 'update-marker-preserved'
 gradle --no-daemon --stacktrace :app:assembleDebug -PtestVersionCodeOverride=15
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell run-as org.karuk.gasreceipttracker.preview cat files/upgrade_marker.txt | grep -q 'update-marker-preserved'
