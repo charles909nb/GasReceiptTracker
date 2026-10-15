@@ -19,7 +19,7 @@ object ReceiptLocalLearning {
     }
     fun learn(ctx:Context,station:String,field:String,box:ReceiptEvidence){
         val id=stationId(station);if(id.isBlank())return
-        if(field !in setOf("date","time","fuelType","gallons","price","total","cardType","cardLast4"))return
+        if(field !in setOf("date","time","fuelType","gallons","price","total","cardType","cardLast4","pump"))return
         val data=runCatching{JSONObject(prefs(ctx).getString(KEY,"{}")?:"{}")}.getOrDefault(JSONObject())
         val key=id+"_"+field
         val old=data.optJSONObject(key)
@@ -53,6 +53,7 @@ object ReceiptLocalLearning {
     fun extract(field:String,raw:String):String {
         val text=raw.trim()
         return when(field){
+            "pump"->Regex("""(?<!\\d)\\d{1,3}(?!\\d)""").find(text)?.value?:""
             "gallons"->Regex("""(\d{1,4}[.,]\d{1,3})""").find(text)?.value?.replace(',','.')?:""
             "price"->Regex("""(\d{1,3}[.,]\d{2,4})""").find(text)?.value?.replace(',','.')?:""
             "total"->Regex("""(\d{1,6}[.,]\d{2})""").findAll(text).lastOrNull()?.value?.replace(',','.')?:""
