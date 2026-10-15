@@ -1,7 +1,7 @@
 # Gas Receipt Tracker 2.4.2 - Fuel page / automatic receipt draft saves
 
 Date: October 15, 2026
-Status: DEVELOPMENT - READY FOR USER TEST AFTER ANDROID VERIFICATION; NOT CONFIRMED COMPLETE
+Status: READY FOR NEAL TO TEST ON PHONE - NOT CONFIRMED COMPLETE
 Based on: tested build of 2.4.1 with user-reported missing-odometer persistence defect.
 
 ## Authorized Fuel page changes
@@ -23,3 +23,9 @@ Based on: tested build of 2.4.1 with user-reported missing-odometer persistence 
 - Await Neal's phone test before changing status to Confirmed Complete.
 
 Unrelated Elders Program backlog, other app sections, and the official Excel asset remain unchanged.
+## Verified build outcome
+- October 15, 2026: GitHub Actions run 38823889655 succeeded: 75 Android tests passed.
+- Official Excel form checksum unchanged; stable app update marker preserved in Android's 20-to-21 emulator upgrade check.
+- Release APK from the successful run signed privately and verified with the permanent Version 2.4.1 certificate.
+- The final signed APK is delivered in conversation; 2.4.1 remains available as the previous user-test version.
+- Real-phone test and Neal's confirmation still pending.
