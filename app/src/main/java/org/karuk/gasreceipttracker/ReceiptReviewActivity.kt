@@ -117,10 +117,12 @@ class ReceiptReviewActivity:Activity() {
             13f,false,Color.WHITE))
         root.addView(header)
         scroller=ScrollView(this).apply{setBackgroundColor(Color.WHITE)}
-        overlay=ReceiptHighlightView(this,requireNotNull(image),evidence){selected->
-            val i=fields.indexOfFirst{it.key==selected}
-            if(i>=0){position=i;renderField()}
-        },{x,y->rescanAt(x,y)}
+        overlay=ReceiptHighlightView(this,requireNotNull(image),evidence,
+            { selected ->
+                val i=fields.indexOfFirst{it.key==selected}
+                if(i>=0){position=i;renderField()}
+            },
+            { x,y -> rescanAt(x,y) })
         scroller.addView(overlay)
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val controls=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL
