@@ -64,5 +64,24 @@ object ReceiptLocalLearning {
             else->text.take(90)
         }
     }
+    data class LearnedLayout(val key:String,val stationCode:String,val field:String,val confirmations:Int)
+    fun entries(ctx:Context):List<LearnedLayout>{
+        val root=runCatching{JSONObject(prefs(ctx).getString(KEY,"{}")?:"{}")}.getOrDefault(JSONObject())
+        val keys=root.keys().asSequence().toList().sorted()
+        return keys.mapNotNull{key->
+            val entry=root.optJSONObject(key)?:return@mapNotNull null
+            val underscore=key.lastIndexOf('_')
+            if(underscore<=0 || underscore>=key.length-1)return@mapNotNull null
+            LearnedLayout(key,key.substring(0,underscore).take(8),
+                key.substring(underscore+1),entry.optInt("count",0))
+        }
+    }
+    fun delete(ctx:Context,key:String):Boolean {
+        val root=runCatching{JSONObject(prefs(ctx).getString(KEY,"{}")?:"{}")}.getOrNull()
+            ?:return false
+        if(!root.has(key))return false
+        root.remove(key)
+        return prefs(ctx).edit().putString(KEY,root.toString()).commit()
+    }
     fun clear(ctx:Context)=prefs(ctx).edit().remove(KEY).commit()
 }
