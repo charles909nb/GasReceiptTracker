@@ -112,6 +112,7 @@ object ReceiptEvidenceMatcher {
             "station"->if(s.contains("CHEVR")||s.contains("SHELL")||s.contains("ARCO"))15 else 2
             "date"->if(Regex("""\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b""").containsMatchIn(s))15 else 0
             "time"->5
+            "pump"->if(s.contains("PUMP")||s.contains("DISPENSER"))30 else 0
             "gallons"->if(Regex("""\d[.,]\d+\s*(G|GAL|GALLONS)\b""").containsMatchIn(s))25
                 else if(s.contains("GAL") || prev.contains("GAL"))15 else 1
             "price"->if(s.contains("PRICE/GAL") || s.contains("UNIT PRICE"))30
@@ -140,7 +141,7 @@ object ReceiptEvidenceMatcher {
     }
     fun locate(scan:FuelScan,ocr:List<ReceiptOcrLine>):List<ReceiptEvidence> {
         val vals=linkedMapOf(
-            "station" to scan.station, "date" to scan.date, "time" to scan.time,
+            "station" to scan.station, "date" to scan.date, "time" to scan.time, "pump" to scan.pump,
             "fuelType" to scan.fuelType,"gallons" to scan.gallons,
             "price" to scan.price,"total" to scan.total,
             "cardType" to scan.cardType,"cardLast4" to scan.cardLast4)
