@@ -44,7 +44,8 @@ class ReceiptReviewActivity:Activity() {
         Field("price","Price per gallon","ocr_price","price"),
         Field("total","Fuel total paid","ocr_total","cost"),
         Field("cardType","Payment card type","ocr_card_type","cardType"),
-        Field("cardLast4","Payment card last four","ocr_card_last4","receiptCardLast4")
+        Field("cardLast4","Payment card last four","ocr_card_last4","receiptCardLast4"),
+        Field("pump","Pump number","ocr_pump","pumpNumber")
     )
     private val prefs by lazy{getSharedPreferences("usage_data",MODE_PRIVATE)}
     private lateinit var scroller:ScrollView
@@ -253,7 +254,7 @@ class ReceiptReviewActivity:Activity() {
             else "Found in "+target.source+" OCR: "+target.recognized.take(140)
         ignoreChange=true
         entry.inputType=when(field.key){
-            "cardLast4"->InputType.TYPE_CLASS_NUMBER
+            "cardLast4","pump"->InputType.TYPE_CLASS_NUMBER
             "gallons","price","total"->InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             else->InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         }
