@@ -32,6 +32,7 @@ class ReceiptReviewActivity:Activity() {
         const val EXTRA_REQUEST_ID="requestId"
         const val EXTRA_HISTORY="readOnlyHistory"
         const val EXTRA_RECEIPT="savedReceipt"
+        const val EXTRA_EDIT_HISTORY="editSavedReceipt"
     }
     private data class Field(val key:String,val title:String,val pref:String,val record:String)
     private val fields=listOf(
@@ -57,6 +58,7 @@ class ReceiptReviewActivity:Activity() {
     private lateinit var savedReceipt:JSONObject
     private var expectedRequestId=""
     private var readonly=false
+    private var editingSaved=false
     private var position=4
     private var ignoreChange=false
     private var saved=false
@@ -84,7 +86,8 @@ class ReceiptReviewActivity:Activity() {
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        readonly=intent.getBooleanExtra(EXTRA_HISTORY,false)
+        editingSaved=intent.getBooleanExtra(EXTRA_EDIT_HISTORY,false)
+        readonly=intent.getBooleanExtra(EXTRA_HISTORY,false) && !editingSaved
         expectedRequestId=intent.getStringExtra(EXTRA_REQUEST_ID).orEmpty()
         savedReceipt=runCatching{JSONObject(intent.getStringExtra(EXTRA_RECEIPT)?:"{}")}.getOrDefault(JSONObject())
         val path=if(readonly)savedReceipt.optString("image")else pref("pending_receipt")
@@ -111,10 +114,12 @@ class ReceiptReviewActivity:Activity() {
             setBackgroundColor(TrackerStyle.background)}
         val header=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(12),dp(18),dp(12));setBackgroundColor(TrackerStyle.red)}
-        header.addView(TrackerStyle.text(this,if(readonly)"Saved receipt verification"else "Check your receipt",
+        header.addView(TrackerStyle.text(this,if(readonly)"Saved receipt verification"else if(editingSaved)"Correct saved receipt"else "Check your receipt",
             20f,true,Color.WHITE))
         header.addView(TrackerStyle.text(this,"Select the missing field below, then tap its text on the receipt to rescan that spot offline.",
             13f,false,Color.WHITE))
+        if(editingSaved) header.addView(TrackerStyle.text(this,
+            "Corrections update the searchable record. An already-sent Finance packet stays unchanged.",12f,false,Color.WHITE))
         root.addView(header)
         scroller=ScrollView(this).apply{setBackgroundColor(Color.WHITE)}
         overlay=ReceiptHighlightView(this,requireNotNull(image),evidence,
@@ -157,7 +162,7 @@ class ReceiptReviewActivity:Activity() {
         nav.addView(TrackerStyle.button(this,"Next ▶"){step(1)},LinearLayout.LayoutParams(0,-2,1f))
         controls.addView(nav)
         controls.addView(TrackerStyle.button(this,
-            if(readonly)"Close receipt"else "Save checked fields and return",true){
+            if(readonly)"Close receipt"else if(editingSaved)"Save corrected receipt"else "Save checked fields and return",true){
             if(readonly)finish()else saveReview()
         })
         root.addView(controls)
@@ -216,6 +221,7 @@ class ReceiptReviewActivity:Activity() {
                         ((left+rect.right.toFloat()/factor)/w).coerceIn(0f,1f),
                         ((top+rect.bottom.toFloat()/factor)/h).coerceIn(0f,1f),"tap-rescan")
                     tappedLocations[field.key]=b
+                    overlay.addHighlight(b)
                 }
                 values[field.key]=value
                 renderField()
@@ -277,7 +283,7 @@ class ReceiptReviewActivity:Activity() {
         acknowledgement.visibility=if(!readonly&&card.mismatch)View.VISIBLE else View.GONE
     }
     private fun saveDraft(){
-        if(readonly||saved)return
+        if(readonly||editingSaved||saved)return
         if(currentRequestId()!=expectedRequestId)return
         val editor=prefs.edit()
         for(field in fields){
@@ -289,8 +295,20 @@ class ReceiptReviewActivity:Activity() {
     }
     override fun onPause(){saveDraft();super.onPause()}
     override fun onDestroy(){image?.recycle();image=null;super.onDestroy()}
+    private fun learnConfirmedLocations(changedKeys:JSONArray) {
+        val station=values["station"].orEmpty()
+        val changed=(0 until changedKeys.length()).map{changedKeys.optString(it)}.toSet()
+        for(field in fields){
+            if(values[field.key].orEmpty().isBlank())continue
+            // Explicitly corrected OCR evidence teaches the station's field position.
+            // A tapped rescan teaches its newly confirmed position. Never learn values.
+            val location=tappedLocations[field.key] ?: if(field.key in changed)
+                evidence.firstOrNull{it.field==field.key} else null
+            if(location!=null)runCatching{ReceiptLocalLearning.learn(this,station,field.key,location)}
+        }
+    }
     private fun saveReview(){
-        if(currentRequestId()!=expectedRequestId){
+        if(!editingSaved && currentRequestId()!=expectedRequestId){
             Toast.makeText(this,"The active PR changed. Return to Fuel to reopen this receipt.",Toast.LENGTH_LONG).show()
             return
         }
@@ -309,12 +327,48 @@ class ReceiptReviewActivity:Activity() {
                 .setPositiveButton("Review card",null).show()
             return
         }
-        val corrections=JSONArray()
+        if(values["date"].orEmpty().isBlank() || values["station"].orEmpty().isBlank() ||
+            (values["gallons"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0 ||
+            (values["total"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0 ||
+            (values["price"].orEmpty().isNotBlank() &&
+                (values["price"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0)) {
+            Toast.makeText(this,"Check the station, date, gallons, unit price and total before saving.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val corrections=if(editingSaved) JSONArray(savedReceipt.optJSONArray("ocrCorrections")?.toString()?:"[]") else JSONArray()
+        val changedKeys=JSONArray()
+        for(field in fields) if(original[field.key].orEmpty().trim()!=values[field.key].orEmpty().trim())
+            changedKeys.put(field.key)
         for(field in fields)if(original[field.key].orEmpty()!=values[field.key].orEmpty().trim()){
             corrections.put(JSONObject().put("field",field.key)
                 .put("readByScanner",ReceiptPrivacy.redact(original[field.key].orEmpty()))
                 .put("confirmedValue",ReceiptPrivacy.redact(values[field.key].orEmpty().trim()))
                 .put("time",timestamp()))
+        }
+        if(editingSaved){
+            val updates=JSONObject()
+            for(field in fields) if(original[field.key].orEmpty().trim()!=values[field.key].orEmpty().trim())
+                updates.put(field.record, values[field.key].orEmpty().trim())
+            updates.put("changedFields",changedKeys)
+                .put("ocrCorrections",corrections)
+                .put("reviewedAt",timestamp())
+                .put("cardVerificationStatus",if(card.mismatch)"MISMATCH_ACKNOWLEDGED" else card.status)
+                .put("cardMismatchAcknowledged",card.mismatch&&acknowledgement.isChecked)
+            if(updates.has("receiptCardLast4"))
+                updates.put("cardLast4",ReceiptPrivacy.last4(values["cardLast4"].orEmpty()))
+            try{
+                RequestWorkflow(this).correctSavedReceipt(expectedRequestId,
+                    savedReceipt.getString("id"),updates)
+            }catch(e:Exception){
+                Toast.makeText(this,e.message?:"Could not save the corrected receipt.",
+                    Toast.LENGTH_LONG).show()
+                return
+            }
+            learnConfirmedLocations(changedKeys)
+            saved=true
+            setResult(RESULT_OK);finish()
+            return
         }
         val editor=prefs.edit()
         for(field in fields)editor.putString(field.pref,values[field.key].orEmpty().trim())
@@ -328,12 +382,7 @@ class ReceiptReviewActivity:Activity() {
             Toast.makeText(this,"Could not save verified receipt fields.",Toast.LENGTH_LONG).show()
             return
         }
-        // Learn only from values the user actually confirmed, never from an unreviewed guess.
-        val station=values["station"].orEmpty()
-        tappedLocations.forEach{(key,box)->
-            if(values[key].orEmpty().isNotBlank())
-                runCatching{ReceiptLocalLearning.learn(this,station,key,box)}
-        }
+        learnConfirmedLocations(changedKeys)
         runCatching{RequestWorkflow(this).sync()}
         saved=true
         setResult(RESULT_OK);finish()
