@@ -251,7 +251,7 @@ class MainActivity : Activity() {
         check(editor.commit()){"Could not save the scan on this phone."}
         workflow.sync()
     }
-    private fun checkReceipt(saved:JSONObject?=null){
+    private fun checkReceipt(saved:JSONObject?=null, requestId:String="", correct:Boolean=false){
         if(saved==null && pref("pending_receipt").isBlank()){
             alert("Scan or photograph a receipt first.");return
         }
@@ -259,7 +259,9 @@ class MainActivity : Activity() {
         if(saved==null){
             intent.putExtra(ReceiptReviewActivity.EXTRA_REQUEST_ID,workflow.current().getString("id"))
         }else{
-            intent.putExtra(ReceiptReviewActivity.EXTRA_HISTORY,true)
+            intent.putExtra(ReceiptReviewActivity.EXTRA_HISTORY,!correct)
+            intent.putExtra(ReceiptReviewActivity.EXTRA_EDIT_HISTORY,correct)
+            intent.putExtra(ReceiptReviewActivity.EXTRA_REQUEST_ID,requestId)
             intent.putExtra(ReceiptReviewActivity.EXTRA_RECEIPT,saved.toString())
         }
         prefs.edit().putString("receiptReviewReturn",if(saved==null)"fuel"else "history").commit()
@@ -371,6 +373,9 @@ class MainActivity : Activity() {
             val r=receipts.getJSONObject(i)
             label(r.optString("date")+" - "+r.optString("station")+"\n"+r.optString("gallons")+" gallons, $"+r.optString("cost")+", Vehicle "+r.optString("vehicle"))
             action("Review receipt highlights "+(i+1)){checkReceipt(r)}
+            action("Correct saved receipt "+(i+1)){
+                checkReceipt(r, workflow.current().getString("id"), true)
+            }
             action("View receipt "+(i+1)){
                 try{
                     val stored=Uri.parse(r.getString("image"))
@@ -718,6 +723,9 @@ class MainActivity : Activity() {
                         r.reference+" • "+row.status))
                 results.addView(TrackerStyle.button(this,"Review saved receipt"){
                     checkReceipt(r.payload)
+                })
+                results.addView(TrackerStyle.button(this,"Correct receipt details"){
+                    checkReceipt(r.payload,r.requestId,true)
                 })
                 results.addView(TrackerStyle.button(this,"View transaction details"){
                     android.app.AlertDialog.Builder(this).setTitle(r.station+" — "+r.date)
