@@ -172,11 +172,35 @@ class MainActivity : Activity() {
         body.addView(TrackerStyle.card(this,"Your workspace","Version "+version+"  •  Original Karuk Gas worksheet included"))
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
         action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
-        action("Clear offline receipt learning"){
+        action("Review learned receipt layouts"){learningScreen()}
+    }
+    private fun learningScreen(){
+        draw("Private receipt learning")
+        val layouts=ReceiptLocalLearning.entries(this)
+        label("Learned patterns: "+layouts.size,20f)
+        label("The app saves only approximate positions of corrected fields, by station. It does not memorize past amounts, dates, receipt photos or full card numbers.",14f)
+        label("Save complete backup under Settings to export these patterns; restoring that backup also restores them.",14f)
+        if(layouts.isEmpty())label("No confirmed station layout patterns yet.")
+        for(layout in layouts){
+            val fieldName=layout.field.replace(Regex("([a-z])([A-Z])"),"$1 $2")
+            body.addView(TrackerStyle.card(this,
+                fieldName+" • Station "+layout.stationCode,
+                "Confirmed "+layout.confirmations+" time(s)"))
+            action("Delete "+fieldName+" hint for station "+layout.stationCode){
+                android.app.AlertDialog.Builder(this).setTitle("Delete this learned hint?")
+                    .setMessage("Only this station/field hint will be deleted; all receipts remain saved.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Delete"){_,_->
+                        if(ReceiptLocalLearning.delete(this,layout.key))learningScreen()
+                        else alert("The hint could not be deleted.")
+                    }.show()
+            }
+        }
+        action("Clear all offline receipt learning"){
             android.app.AlertDialog.Builder(this).setTitle("Clear learned receipt layouts?")
-                .setMessage("This deletes saved station layout hints only. Your receipts and Finance packets remain unchanged.")
+                .setMessage("Deletes all station layout hints only. Receipts and Finance packets are not affected.")
                 .setNegativeButton("Cancel",null).setPositiveButton("Clear"){_,_->
-                    ReceiptLocalLearning.clear(this);alert("Local receipt learning cleared")
+                    if(ReceiptLocalLearning.clear(this))learningScreen()
+                    else alert("Could not clear the saved learning.")
                 }.show()
         }
     }
