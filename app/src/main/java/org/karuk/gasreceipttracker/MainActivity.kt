@@ -25,6 +25,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("usage_data", MODE_PRIVATE) }
@@ -42,6 +43,62 @@ class MainActivity : Activity() {
     private val now get() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
     private fun data(key: String): JSONArray = JSONArray(prefs.getString(key, "[]").orEmpty().ifBlank{"[]"})
     private fun store(key: String, value: JSONArray) { check(prefs.edit().putString(key, value.toString()).commit()); workflow.sync() }
+    /** Store trips and receipt associations together; do not clone expenses. */
+    private fun storeTripsAndReceiptLinks(trips:JSONArray,receipts:JSONArray=data("receipts")) {
+        TripReceiptLinker.autoLink(trips,receipts)
+        check(prefs.edit().putString("trips",trips.toString())
+            .putString("receipts",receipts.toString()).commit()){
+            "Could not save the trip and linked receipts"
+        }
+        workflow.sync()
+    }
+    private fun linkReceiptToTrip(tripIndex:Int,receiptId:String,remove:Boolean=false){
+        val trips=data("trips");val receipts=data("receipts")
+        if(remove)TripReceiptLinker.manualUnlink(receipts,receiptId)
+        else TripReceiptLinker.manualLink(trips,receipts,tripIndex,receiptId)
+        storeTripsAndReceiptLinks(trips,receipts)
+        show("home")
+    }
+    private fun chooseTripReceipt(tripIndex:Int){
+        val trips=data("trips");val receipts=data("receipts")
+        if(tripIndex !in 0 until trips.length() || receipts.length()==0)return
+        val trip=trips.getJSONObject(tripIndex)
+        val options=(0 until receipts.length()).map{receipts.getJSONObject(it)}
+        val labels=options.map { r ->
+            listOf(r.optString("station").ifBlank{"Fuel receipt"},r.optString("date"),
+                r.optString("cost").takeIf{it.isNotBlank()}?.let{"$"+it}.orEmpty())
+                .filter{it.isNotBlank()}.joinToString(" • ")+
+                if(r.optString("tripId").isNotBlank())" (linked)" else ""
+        }.toTypedArray()
+        val attached=TripReceiptLinker.linkedTo(trip,receipts)
+        val picker=android.app.AlertDialog.Builder(this).setTitle("Attach receipt to trip")
+            .setItems(labels){_,index->
+                val r=options[index]
+                val tripId=trip.optString("id")
+                val moving=r.optString("tripId").isNotBlank()&&r.optString("tripId")!=tripId
+                val mismatch=!trip.optString("vehicle").equals(r.optString("vehicle"),true)
+                if(moving||mismatch){
+                    android.app.AlertDialog.Builder(this).setTitle("Confirm receipt attachment")
+                        .setMessage((if(moving)"This receipt is linked to another trip. Move it here?" else
+                            "This receipt has a different vehicle number. Attach anyway?"))
+                        .setNegativeButton("Cancel",null)
+                        .setPositiveButton("Attach"){_,_->linkReceiptToTrip(tripIndex,r.optString("id"))}.show()
+                }else linkReceiptToTrip(tripIndex,r.optString("id"))
+            }.setNegativeButton("Cancel",null)
+        if(attached.isNotEmpty())picker.setNeutralButton("Unlink"){_,_->
+            val items=attached.map{it.optString("station").ifBlank{"Fuel receipt"}+" • "+it.optString("date")}
+            android.app.AlertDialog.Builder(this).setTitle("Unlink saved receipt")
+                .setItems(items.toTypedArray()){_,which->
+                    val receipt=attached[which]
+                    android.app.AlertDialog.Builder(this).setMessage("Remove this trip association? The receipt stays saved.")
+                        .setNegativeButton("Cancel",null)
+                        .setPositiveButton("Unlink"){_,_->
+                            linkReceiptToTrip(tripIndex,receipt.optString("id"),true)
+                        }.show()
+                }.setNegativeButton("Cancel",null).show()
+        }
+        picker.show()
+    }
     private fun pref(key: String) = prefs.getString(key, "") ?: ""
     private fun dp(v:Int)=TrackerStyle.dp(this,v)
     private fun label(text:String,size:Float=18f){
@@ -258,7 +315,10 @@ class MainActivity : Activity() {
         else for(i in 0 until receipts.length())if(receipts.getJSONObject(i).optString("id")==saved.optString("id")){
             receipts.put(i,saved);break
         }
+        val trips=data("trips")
+        TripReceiptLinker.autoLink(trips,receipts)
         check(prefs.edit().putString("draftFuelReceiptId",saved.getString("id"))
+            .putString("trips",trips.toString())
             .putString("receipts",receipts.toString()).commit()){"Could not save the receipt draft"}
         workflow.sync()
         return saved
@@ -351,6 +411,7 @@ class MainActivity : Activity() {
         draw("Your travel workspace");requestBanner();action("New travel / PR"){newRequestDialog(false)}
         val driverName=pref("driver");val department=pref("department");label(driverName+"  /  "+department,14f)
         val vehicle=vehiclePicker(pref("vehicle"));val entries=data("trips")
+        val receipts=data("receipts")
         var active=-1
         for(i in 0 until entries.length())if(!entries.getJSONObject(i).has("endOdometer"))active=i
         if(active>=0){
@@ -359,36 +420,77 @@ class MainActivity : Activity() {
             val end=edit("Ending odometer",pref("draftEndOdometer"),true);autoSaveField(end,"draftEndOdometer")
             action("End trip"){
                 val od=end.text.toString().toDoubleOrNull()
-                if(od==null||!od.isFinite()||od<trip.optDouble("startOdometer")){end.error="Enter a valid ending odometer";return@action}
-                trip.put("endOdometer",end.text.toString()).put("endDate",now)
-                prefs.edit().remove("draftEndOdometer").putString("lastOdometer_"+trip.optString("vehicle"),end.text.toString()).commit()
-                store("trips",entries);show("home")
+                if(od==null||!od.isFinite()||od<trip.optDouble("startOdometer")){
+                    end.error="Enter a valid ending odometer";return@action
+                }
+                trip.put("endOdometer",end.text.toString())
+                    .put("endDate",trip.optString("tripDate").ifBlank{now})
+                prefs.edit().remove("draftEndOdometer")
+                    .putString("lastOdometer_"+trip.optString("vehicle"),end.text.toString()).commit()
+                storeTripsAndReceiptLinks(entries);show("home")
             }
         }else{
             label("Start a trip")
             val start=edit("Starting odometer",pref("draftStartOdometer").ifBlank{pref("lastOdometer_"+pref("vehicle"))},true)
-            val destination=edit("Destination",pref("draftDestination"));val purpose=edit("Purpose of travel",pref("draftPurpose"))
-            autoSaveField(start,"draftStartOdometer");autoSaveField(destination,"draftDestination");autoSaveField(purpose,"draftPurpose")
+            val destination=edit("Destination",pref("draftDestination"))
+            val purpose=edit("Purpose of travel",pref("draftPurpose"))
+            autoSaveField(start,"draftStartOdometer")
+            autoSaveField(destination,"draftDestination")
+            autoSaveField(purpose,"draftPurpose")
+            // For a trip entered after fueling, show the actual travel date once.
+            // No new fields appear during the ordinary trip-first workflow.
+            val priorReceipt=if(receipts.length()==1)receipts.optJSONObject(0) else null
+            val travelDate=if(receipts.length()>0){
+                edit("Trip date",pref("draftTripDate").ifBlank{
+                    priorReceipt?.optString("date").orEmpty().ifBlank{
+                        java.text.SimpleDateFormat("M/d/yyyy",Locale.US).format(Date())
+                    }
+                }).also{autoSaveField(it,"draftTripDate")}
+            }else null
             action("Start trip"){
                 if(workflow.pendingEmail()!=null){offerEmailConfirmation(true);return@action}
-                if(data("receipts").length()>0){alert("Finish the fueled request, or use New travel / PR to keep the next trip separate.");return@action}
                 val startValue=start.text.toString().toDoubleOrNull()
-                if(startValue==null||!startValue.isFinite()||startValue<0||destination.text.isBlank()||purpose.text.isBlank()||driverName.isBlank()||vehicle.selectedItem.toString().startsWith("Choose")){
+                if(startValue==null||!startValue.isFinite()||startValue<0||
+                    destination.text.isBlank()||purpose.text.isBlank()||driverName.isBlank()||
+                    vehicle.selectedItem.toString().startsWith("Choose")){
                     alert("Enter driver, vehicle, odometer, destination and purpose");return@action
                 }
+                val selectedDate=travelDate?.text?.toString()?.trim().orEmpty()
+                if(travelDate!=null && TripReceiptLinker.parseDate(selectedDate)==null){
+                    travelDate.error="Enter a valid trip date";return@action
+                }
                 prefs.edit().putString("vehicle",vehicle.selectedItem.toString()).commit()
-                entries.put(JSONObject().put("driver",driverName).put("vehicle",vehicle.selectedItem.toString()).put("department",department)
-                    .put("startDate",now).put("startOdometer",start.text.toString()).put("destination",destination.text.toString()).put("purpose",purpose.text.toString()))
-                store("trips",entries);prefs.edit().remove("draftStartOdometer").remove("draftDestination").remove("draftPurpose").commit()
+                entries.put(JSONObject().put("id",UUID.randomUUID().toString())
+                    .put("driver",driverName).put("vehicle",vehicle.selectedItem.toString())
+                    .put("department",department).put("recordedAt",now)
+                    .put("startDate",selectedDate.ifBlank{now})
+                    .put("startOdometer",start.text.toString())
+                    .put("destination",destination.text.toString())
+                    .put("purpose",purpose.text.toString()).apply{
+                        if(selectedDate.isNotBlank())put("tripDate",selectedDate)
+                    })
+                storeTripsAndReceiptLinks(entries)
+                prefs.edit().remove("draftStartOdometer").remove("draftDestination")
+                    .remove("draftPurpose").remove("draftTripDate").commit()
                 workflow.sync();show("home")
             }
         }
         label("Current sheet - "+entries.length()+" trips",20f)
         for(i in 0 until entries.length()){
-            val j=entries.getJSONObject(i)
-            label((i+1).toString()+". "+j.optString("destination")+" - "+j.optString("purpose")+"\n"+j.optString("startOdometer")+" to "+j.optString("endOdometer","OPEN"))
+            val trip=entries.getJSONObject(i)
+            label((i+1).toString()+". "+trip.optString("destination")+" - "+
+                trip.optString("purpose")+"\n"+trip.optString("startOdometer")+
+                " to "+trip.optString("endOdometer","OPEN"))
+            val attached=TripReceiptLinker.linkedTo(trip,receipts)
+            for(receipt in attached)label("Fuel receipt: "+receipt.optString("station")+
+                " • "+receipt.optString("date")+" • $"+receipt.optString("cost"),14f)
+            if(receipts.length()>0){
+                action(if(attached.isEmpty())"Attach receipt to trip "+(i+1)
+                    else "Change receipt for trip "+(i+1)){chooseTripReceipt(i)}
+            }
         }
-        action("Record fuel purchase"){show("fuel")};action("Preview / export vehicle usage sheet"){show("sheets")}
+        action("Record fuel purchase"){show("fuel")}
+        action("Preview / export vehicle usage sheet"){show("sheets")}
     }
     private fun autoSaveField(field:EditText,key:String){
         field.addTextChangedListener(object:TextWatcher{

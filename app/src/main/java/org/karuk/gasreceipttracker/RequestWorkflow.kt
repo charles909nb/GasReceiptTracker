@@ -20,7 +20,7 @@ class RequestWorkflow(private val context: Context) {
         const val PENDING_EMAIL = "pendingRequestEmail"
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
             "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
-            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle", "draftFuelReceiptId",
+            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle", "draftFuelReceiptId", "draftTripDate",
             "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn",
             "ocr_card_type", "ocr_evidence", "ocr_reviewed_at", "ocr_corrections",
             "ocr_card_verification", "ocr_card_mismatch_ack",

@@ -8,7 +8,7 @@ adb wait-for-device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r org.karuk.gasreceipttracker.preview.test/androidx.test.runner.AndroidJUnitRunner | tee verification-instrumentation.txt
-grep -q 'OK (75 tests)' verification-instrumentation.txt
+grep -q 'OK (84 tests)' verification-instrumentation.txt
 adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
 # adb pull <directory> <existing-directory> may nest a verification directory.
 if [ -d verification/verification ]; then
@@ -35,12 +35,12 @@ printf 'update-marker-preserved\n' > verification/upgrade_marker.txt
 adb push verification/upgrade_marker.txt /data/local/tmp/grt-upgrade-marker.txt
 adb shell run-as org.karuk.gasreceipttracker.preview cp /data/local/tmp/grt-upgrade-marker.txt files/upgrade_marker.txt
 adb shell run-as org.karuk.gasreceipttracker.preview cat files/upgrade_marker.txt | grep -q 'update-marker-preserved'
-gradle --no-daemon --stacktrace :app:assembleDebug -PtestVersionCodeOverride=21
+gradle --no-daemon --stacktrace :app:assembleDebug -PtestVersionCodeOverride=23
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell run-as org.karuk.gasreceipttracker.preview cat files/upgrade_marker.txt | grep -q 'update-marker-preserved'
 cp "$old_debug_apk" app/build/outputs/apk/debug/app-debug.apk
 rm -f "$old_debug_apk"
-echo 'In-place version 20-to-21 update retained on-device app data.' | tee verification/IN_PLACE_UPDATE_RESULT.txt
+echo 'In-place version 22-to-23 update retained on-device app data.' | tee verification/IN_PLACE_UPDATE_RESULT.txt
 
 signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
 "$signer" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk > verification/APK_SIGNATURE_VERIFICATION.txt

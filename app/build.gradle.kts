@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 20)
-        versionName = "2.4.2-auto-saved-fuel-drafts"
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 22)
+        versionName = "2.4.3-trip-receipt-linking"
     }
     buildTypes {
         getByName("debug") {
