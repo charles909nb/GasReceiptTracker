@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Bitmap
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -59,6 +63,8 @@ class ReceiptReviewActivity:Activity() {
     private var image:android.graphics.Bitmap?=null
     private var evidence:List<ReceiptEvidence> = emptyList()
     private val values=linkedMapOf<String,String>()
+    private val tappedLocations=mutableMapOf<String,ReceiptEvidence>()
+    private var scanning=false
     private lateinit var original:Map<String,String>
 
     private fun dp(n:Int)=TrackerStyle.dp(this,n)
@@ -107,14 +113,14 @@ class ReceiptReviewActivity:Activity() {
             setPadding(dp(18),dp(12),dp(18),dp(12));setBackgroundColor(TrackerStyle.red)}
         header.addView(TrackerStyle.text(this,if(readonly)"Saved receipt verification"else "Check your receipt",
             20f,true,Color.WHITE))
-        header.addView(TrackerStyle.text(this,"Tap highlighted text or use Previous / Next to examine each field.",
+        header.addView(TrackerStyle.text(this,"Select the missing field below, then tap its text on the receipt to rescan that spot offline.",
             13f,false,Color.WHITE))
         root.addView(header)
         scroller=ScrollView(this).apply{setBackgroundColor(Color.WHITE)}
         overlay=ReceiptHighlightView(this,requireNotNull(image),evidence){selected->
             val i=fields.indexOfFirst{it.key==selected}
             if(i>=0){position=i;renderField()}
-        }
+        },{x,y->rescanAt(x,y)}
         scroller.addView(overlay)
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val controls=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL
@@ -126,6 +132,9 @@ class ReceiptReviewActivity:Activity() {
         evidenceText=TrackerStyle.text(this,"",12f,false,TrackerStyle.muted).apply{
             setPadding(0,dp(2),0,dp(7))}
         controls.addView(evidenceText)
+        controls.addView(TrackerStyle.button(this,"Tap receipt text to rescan selected field"){
+            Toast.makeText(this,"Tap the number or text on the receipt image above.",Toast.LENGTH_SHORT).show()
+        })
         entry=EditText(this).apply{
             hint="Check this against the receipt"
             contentDescription="Correct current receipt field"
@@ -166,6 +175,58 @@ class ReceiptReviewActivity:Activity() {
             override fun afterTextChanged(s:Editable?){}
         })
         renderField()
+    }
+    /** Crop around the tapped text, upscale, then rerun ML Kit entirely on device. */
+    private fun rescanAt(x:Float,y:Float){
+        if(readonly||scanning)return
+        val bitmap=image?:return
+        val field=fields[position]
+        val w=bitmap.width;val h=bitmap.height
+        val cropW=(w*0.34f).toInt().coerceAtLeast(80).coerceAtMost(w)
+        val cropH=(h*0.075f).toInt().coerceAtLeast(48).coerceAtMost(h)
+        val left=(x*w-cropW/2).toInt().coerceIn(0,w-cropW)
+        val top=(y*h-cropH/2).toInt().coerceIn(0,h-cropH)
+        val region=Bitmap.createBitmap(bitmap,left,top,cropW,cropH)
+        val factor=if(cropW<950)2 else 1
+        val enlarged=if(factor>1)Bitmap.createScaledBitmap(region,cropW*factor,cropH*factor,true)else region
+        scanning=true
+        evidenceText.text="Reading the selected area on this phone..."
+        val recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        recognizer.process(InputImage.fromBitmap(enlarged,0)).addOnSuccessListener{result->
+            val best=result.textBlocks.flatMap{it.lines}
+                .map{line->line to ReceiptLocalLearning.extract(field.key,line.text)}
+                .filter{it.second.isNotBlank()}
+                .minByOrNull{pair->
+                    val rect=pair.first.boundingBox
+                    if(rect==null)Double.MAX_VALUE else
+                        kotlin.math.abs(rect.centerX()-enlarged.width/2).toDouble()/enlarged.width+
+                        kotlin.math.abs(rect.centerY()-enlarged.height/2).toDouble()/enlarged.height
+                }
+            if(best==null){
+                evidenceText.text="No valid "+field.title.lowercase()+" found there. Try another spot or enter it manually."
+            }else{
+                val (line,value)=best
+                val rect=line.boundingBox
+                if(rect!=null){
+                    val b=ReceiptEvidence(field.key,ReceiptPrivacy.redact(line.text),
+                        ((left+rect.left.toFloat()/factor)/w).coerceIn(0f,1f),
+                        ((top+rect.top.toFloat()/factor)/h).coerceIn(0f,1f),
+                        ((left+rect.right.toFloat()/factor)/w).coerceIn(0f,1f),
+                        ((top+rect.bottom.toFloat()/factor)/h).coerceIn(0f,1f),"tap-rescan")
+                    tappedLocations[field.key]=b
+                }
+                values[field.key]=value
+                renderField()
+                evidenceText.text="Tap scan found: "+ReceiptPrivacy.redact(value)+". Verify before saving."
+            }
+        }.addOnFailureListener{
+            evidenceText.text="Could not read that area. Try again or type the value."
+        }.addOnCompleteListener{
+            scanning=false
+            recognizer.close()
+            if(enlarged!==region)enlarged.recycle()
+            region.recycle()
+        }
     }
     private fun step(direction:Int){
         (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
@@ -264,6 +325,12 @@ class ReceiptReviewActivity:Activity() {
         if(!editor.commit()){
             Toast.makeText(this,"Could not save verified receipt fields.",Toast.LENGTH_LONG).show()
             return
+        }
+        // Learn only from values the user actually confirmed, never from an unreviewed guess.
+        val station=values["station"].orEmpty()
+        tappedLocations.forEach{(key,box)->
+            if(values[key].orEmpty().isNotBlank())
+                runCatching{ReceiptLocalLearning.learn(this,station,key,box)}
         }
         runCatching{RequestWorkflow(this).sync()}
         saved=true
