@@ -148,6 +148,43 @@ class RequestWorkflow(private val context: Context) {
         check(target.optString("status") == "draft") { "Completed requests are read-only in History." }
         s.put("activeId", id); write(s, true)
     }
+    /** Amend a saved receipt in-place without changing its ID, photo, original Finance PDF
+     * or unrelated requests. The archived sent packet remains an immutable snapshot. */
+    @Synchronized fun correctSavedReceipt(
+        requestId: String, receiptId: String, updates: JSONObject
+    ): JSONObject {
+        val state = load()
+        capture(state)
+        check(pendingEmail()?.optString("requestId") != requestId) {
+            "Finish or cancel the pending Finance email before correcting this receipt."
+        }
+        val request = find(state, requestId) ?: error("The original request cannot be found.")
+        val receipts = request.optJSONArray("receipts") ?: error("This request has no saved receipts.")
+        val receipt = (0 until receipts.length()).map { receipts.getJSONObject(it) }
+            .firstOrNull { it.optString("id") == receiptId }
+            ?: error("The original saved receipt cannot be found.")
+        val allowed = setOf("station", "date", "receiptTime", "fuelType", "gallons", "price",
+            "cost", "cardType", "receiptCardLast4", "cardLast4", "cardVerificationStatus",
+            "cardMismatchAcknowledged", "reviewedAt", "ocrCorrections")
+        for (key in allowed) if (updates.has(key)) receipt.put(key, updates.get(key))
+        val revision = JSONObject().put("at", stamp())
+            .put("changedFields", updates.optJSONArray("changedFields") ?: JSONArray())
+            .put("financePacketPreviouslySent", request.optString("status") == "sent")
+        val history = receipt.optJSONArray("correctionHistory") ?: JSONArray()
+        history.put(revision)
+        receipt.put("correctionHistory", history)
+        if (request.optString("status") == "sent")
+            receipt.put("correctedAfterFinanceSubmission", true)
+        val activeId = state.optString("activeId")
+        write(state, false) { editor ->
+            if (activeId == requestId) editor.putString("receipts", receipts.toString())
+            editor.remove("reviewedRequestFingerprint")
+        }
+        TrackerDatabase(context).use { it.log(requestId, "saved_receipt_corrected",
+            "Receipt $receiptId corrected; original image and sent packet preserved.") }
+        return copy(receipt)
+    }
+
     @Synchronized fun saveSignature(source: File): File {
         val s = load(); capture(s); val a = active(s)
         val destination = File(context.filesDir, "signature_" + a.getString("id") + "_" + System.currentTimeMillis() + ".png")
