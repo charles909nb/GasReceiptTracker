@@ -8,7 +8,7 @@ adb wait-for-device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r org.karuk.gasreceipttracker.preview.test/androidx.test.runner.AndroidJUnitRunner | tee verification-instrumentation.txt
-grep -q 'OK (63 tests)' verification-instrumentation.txt
+grep -q 'OK (65 tests)' verification-instrumentation.txt
 adb pull /sdcard/Android/data/org.karuk.gasreceipttracker.preview/files/verification verification
 # adb pull <directory> <existing-directory> may nest a verification directory.
 if [ -d verification/verification ]; then
