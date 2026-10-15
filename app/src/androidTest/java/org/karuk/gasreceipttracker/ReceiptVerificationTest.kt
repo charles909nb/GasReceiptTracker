@@ -8,6 +8,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.view.View
+import android.view.MotionEvent
+import android.os.SystemClock
+import android.widget.Spinner
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
@@ -165,11 +168,13 @@ class ReceiptVerificationTest {
         assertTrue(overlay.hasHighlight("price"))
         assertNotNull(overlay.selectedRect())
         screenshot("UI_Receipt_Highlight")
-        instrumentation.runOnMainSync{findButton("Next ▶").performClick()}
+        instrumentation.runOnMainSync{
+            all(a.window.decorView).filterIsInstance<Spinner>().single().setSelection(5)
+        }
         instrumentation.waitForIdleSync()
         assertEquals("price",overlay.activeField)
-        assertTrue(all(a.window.decorView).filterIsInstance<TextView>()
-            .any{it.text.toString()=="Price per gallon"})
+        assertEquals("Price per gallon",all(a.window.decorView)
+            .filterIsInstance<Spinner>().single().selectedItem.toString())
         instrumentation.runOnMainSync{
             all(a.window.decorView).filterIsInstance<EditText>().first().setText("6.9993")
             findButton("Save checked fields and return").performClick()
@@ -189,6 +194,58 @@ class ReceiptVerificationTest {
         assertEquals("1234",prefs.getString("cardLast4",""))
         assertEquals("5678",prefs.getString("ocr_card_last4",""))
     }
+    @Test fun wrongHighlightTapMustNotSwitchPriceToGallonsOrChangeItsValue(){
+        val id=seed()
+        prefs.edit().putString("cardLast4","5678").commit()
+        val a=instrumentation.startActivitySync(Intent(context,ReceiptReviewActivity::class.java)
+            .putExtra(ReceiptReviewActivity.EXTRA_REQUEST_ID,id)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ReceiptReviewActivity
+        activity=a;instrumentation.waitForIdleSync()
+        val overlay=all(a.window.decorView).filterIsInstance<ReceiptHighlightView>().single()
+        val spinner=all(a.window.decorView).filterIsInstance<Spinner>().single()
+        instrumentation.runOnMainSync{spinner.setSelection(5)}
+        instrumentation.waitForIdleSync()
+        assertEquals("price",overlay.activeField)
+        val gallon=ReceiptEvidence.fromArray(prefs.getString("ocr_evidence","[]")!!)
+            .first{it.field=="gallons"}
+        instrumentation.runOnMainSync{
+            val x=(gallon.left+gallon.right)*overlay.width/2f
+            val y=(gallon.top+gallon.bottom)*overlay.height/2f
+            val tick=SystemClock.uptimeMillis()
+            val down=MotionEvent.obtain(tick,tick,MotionEvent.ACTION_DOWN,x,y,0)
+            val up=MotionEvent.obtain(tick,tick+50,MotionEvent.ACTION_UP,x,y,0)
+            overlay.dispatchTouchEvent(down)
+            overlay.dispatchTouchEvent(up)
+            down.recycle();up.recycle()
+        }
+        instrumentation.waitForIdleSync()
+        assertEquals("Tapped gallons must not change selected field","price",overlay.activeField)
+        val text=all(a.window.decorView).filterIsInstance<EditText>().single()
+        assertEquals("6.9993",text.text.toString())
+        instrumentation.runOnMainSync{
+            text.setText("5.9993")
+            findButton("Save checked fields and return").performClick()
+        }
+        instrumentation.waitForIdleSync()
+        assertEquals("5.9993",prefs.getString("ocr_price",""))
+        assertEquals("8.765",prefs.getString("ocr_gallons",""))
+    }
+
+    @Test fun reviewShowsOneEditableFieldAndExplicitSelector(){
+        val id=seed()
+        val a=instrumentation.startActivitySync(Intent(context,ReceiptReviewActivity::class.java)
+            .putExtra(ReceiptReviewActivity.EXTRA_REQUEST_ID,id)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ReceiptReviewActivity
+        activity=a;instrumentation.waitForIdleSync()
+        val spinner=all(a.window.decorView).filterIsInstance<Spinner>().single()
+        assertEquals(10,spinner.adapter.count)
+        assertEquals(1,all(a.window.decorView).filterIsInstance<EditText>().count{it.isEnabled})
+        instrumentation.runOnMainSync{spinner.setSelection(5)}
+        instrumentation.waitForIdleSync()
+        assertEquals("Price per gallon",spinner.selectedItem.toString())
+        assertEquals("6.9993",all(a.window.decorView).filterIsInstance<EditText>().single().text.toString())
+    }
+
     @Test fun savedReceiptCanBeRecheckedWithOriginalHighlightsReadOnly(){
         seed()
         val record=JSONObject().put("image",prefs.getString("pending_receipt",""))

@@ -302,6 +302,23 @@ class MainActivity : Activity() {
         val cost=edit("Total cost",pref("ocr_total"),true)
         autoSaveField(station,"ocr_station");autoSaveField(date,"ocr_date");autoSaveField(odometer,"draftOdometer")
         autoSaveField(gallons,"ocr_gallons");autoSaveField(price,"ocr_price");autoSaveField(cost,"ocr_total")
+        // A scanned receipt has ONE editor: ReceiptReviewActivity.
+        // Do not show duplicate editable price/gallons fields on this screen.
+        if(pref("pending_receipt").isNotBlank()){
+            listOf(station,date,gallons,price,cost).forEach{field->
+                val index=body.indexOfChild(field)
+                if(index>0)body.getChildAt(index-1).visibility=android.view.View.GONE
+                field.visibility=android.view.View.GONE
+            }
+            body.addView(TrackerStyle.card(this,"Recognized receipt details (read only)",
+                "Station: "+pref("ocr_station").ifBlank{"Not detected"}+"\n"+
+                "Purchase date: "+pref("ocr_date").ifBlank{"Not detected"}+"\n"+
+                "Gallons: "+pref("ocr_gallons").ifBlank{"Not detected"}+"\n"+
+                "Price per gallon: $"+pref("ocr_price").ifBlank{"Not detected"}+"\n"+
+                "Total paid: $"+pref("ocr_total").ifBlank{"Not detected"}))
+            label("To change the receipt values, use Review and correct below. The vehicle and odometer can still be edited here.",14f)
+        }
+
         label("The original receipt date stays with the purchase. The PR will use today\u0027s date when generated.",14f)
         label("Entries are saved automatically as you type.",14f)
         if(pref("ocr_warn").isNotBlank())label("Check OCR: "+pref("ocr_warn"),14f)
@@ -311,9 +328,8 @@ class MainActivity : Activity() {
             label((if(cardCheck.mismatch)"CARD MISMATCH: "else "Receipt payment: ")+cardCheck.message,14f)
         }
         label(if(pref("pending_receipt").isBlank())"No receipt image attached" else "Receipt image attached")
-        label("After scanning, the receipt opens with highlighted numbers. Tap one or step through each field to correct it.",14f)
         if(pref("pending_receipt").isNotBlank())
-            action("Check receipt with highlighted numbers"){checkReceipt()}
+            action("Review and correct receipt fields"){checkReceipt()}
         action("Scan and crop receipt automatically"){
             val options=GmsDocumentScannerOptions.Builder().setGalleryImportAllowed(true).setPageLimit(1)
                 .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG).setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL).build()

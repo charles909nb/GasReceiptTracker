@@ -51,6 +51,12 @@ class ReceiptReviewActivity:Activity() {
     private lateinit var scroller:ScrollView
     private lateinit var overlay:ReceiptHighlightView
     private lateinit var prompt:TextView
+    private lateinit var fieldPicker:Spinner
+    private lateinit var suggestionText:TextView
+    private lateinit var suggestionAccept:Button
+    private lateinit var suggestionDiscard:Button
+    private data class ScanProposal(val field:String,val value:String,val box:ReceiptEvidence?)
+    private var suggestion:ScanProposal?=null
     private lateinit var count:TextView
     private lateinit var evidenceText:TextView
     private lateinit var cardStatus:TextView
@@ -117,7 +123,7 @@ class ReceiptReviewActivity:Activity() {
             setPadding(dp(18),dp(12),dp(18),dp(12));setBackgroundColor(TrackerStyle.red)}
         header.addView(TrackerStyle.text(this,if(readonly)"Saved receipt verification"else if(editingSaved)"Correct saved receipt"else "Check your receipt",
             20f,true,Color.WHITE))
-        header.addView(TrackerStyle.text(this,"Select the missing field below, then tap its text on the receipt to rescan that spot offline.",
+        header.addView(TrackerStyle.text(this,"Choose a field from the list, then correct its value. Tapping the photo will suggest a value, but nothing changes until you accept it.",
             13f,false,Color.WHITE))
         if(editingSaved) header.addView(TrackerStyle.text(this,
             "Corrections update the searchable record. An already-sent Finance packet stays unchanged.",12f,false,Color.WHITE))
@@ -126,29 +132,65 @@ class ReceiptReviewActivity:Activity() {
         overlay=ReceiptHighlightView(this,requireNotNull(image),evidence,
             { selected ->
                 val i=fields.indexOfFirst{it.key==selected}
-                if(i>=0){position=i;renderField()}
+                if(i>=0 && readonly)selectField(i)
+                else if(i>=0){
+                    // Critical: photo taps must NEVER silently switch editable fields.
+                    val name=fields[i].title
+                    val message="That is the $name area. Choose $name from the list first; your current value was not changed."
+                    evidenceText.text=message
+                    Toast.makeText(this,message,Toast.LENGTH_LONG).show()
+                }
             },
             { x,y -> rescanAt(x,y) })
         scroller.addView(overlay)
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val controls=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(8),dp(18),dp(10));setBackgroundColor(Color.WHITE)}
-        count=TrackerStyle.text(this,"",12f,true,TrackerStyle.red)
+        controls.addView(TrackerStyle.text(this,"1. Choose the ONE field to fix",15f,true,TrackerStyle.ink))
+        fieldPicker=Spinner(this).apply{
+            contentDescription="Choose receipt field to correct"
+            adapter=ArrayAdapter<String>(this@ReceiptReviewActivity,
+                android.R.layout.simple_spinner_dropdown_item, fields.map{it.title})
+            background=TrackerStyle.shape(this@ReceiptReviewActivity,Color.WHITE,TrackerStyle.line,10)
+            setPadding(dp(12),dp(8),dp(12),dp(8))
+            minimumHeight=dp(54)
+        }
+        controls.addView(fieldPicker,LinearLayout.LayoutParams(-1,dp(54)))
+        count=TrackerStyle.text(this,"",12f,true,TrackerStyle.muted)
         controls.addView(count)
-        prompt=TrackerStyle.text(this,"",18f,true)
+        prompt=TrackerStyle.text(this,"",14f,true)
         controls.addView(prompt)
         evidenceText=TrackerStyle.text(this,"",12f,false,TrackerStyle.muted).apply{
             setPadding(0,dp(2),0,dp(7))}
         controls.addView(evidenceText)
-        controls.addView(TrackerStyle.button(this,"Tap receipt text to rescan selected field"){
-            Toast.makeText(this,"Tap the number or text on the receipt image above.",Toast.LENGTH_SHORT).show()
-        })
+        controls.addView(TrackerStyle.text(this,
+            "2. Type the correct value below, OR tap its location in the photo above to get a suggestion.",
+            13f,false,TrackerStyle.muted))
         entry=EditText(this).apply{
             hint="Check this against the receipt"
             contentDescription="Correct current receipt field"
             setSingleLine(true)
         }
         TrackerStyle.input(this,entry);controls.addView(entry)
+        suggestionText=TrackerStyle.text(this,"",14f,true,TrackerStyle.ink).apply{visibility=View.GONE}
+        controls.addView(suggestionText)
+        suggestionAccept=TrackerStyle.button(this,"Use scanned suggestion",true){
+            val proposed=suggestion?:return@button
+            if(readonly || proposed.field!=fields[position].key)return@button
+            values[proposed.field]=proposed.value
+            proposed.box?.let{tappedLocations[proposed.field]=it;overlay.addHighlight(it)}
+            entry.setText(proposed.value)
+            entry.setSelection(entry.text.length)
+            clearSuggestion()
+            evidenceText.text="Applied to ${fields[position].title} only. Other fields remain unchanged."
+        }
+        suggestionAccept.visibility=View.GONE
+        controls.addView(suggestionAccept)
+        suggestionDiscard=TrackerStyle.button(this,"Ignore suggestion"){
+            clearSuggestion()
+        }
+        suggestionDiscard.visibility=View.GONE
+        controls.addView(suggestionDiscard)
         cardStatus=TrackerStyle.text(this,"",13f,false).apply{
             setPadding(dp(8),dp(5),dp(8),dp(5))}
         controls.addView(cardStatus)
@@ -157,17 +199,18 @@ class ReceiptReviewActivity:Activity() {
             buttonTintList=ColorStateList.valueOf(TrackerStyle.red)
         }
         controls.addView(acknowledgement)
-        val nav=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        nav.addView(TrackerStyle.button(this,"◀ Previous"){step(-1)},
-            LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(6)})
-        nav.addView(TrackerStyle.button(this,"Next ▶"){step(1)},LinearLayout.LayoutParams(0,-2,1f))
-        controls.addView(nav)
         controls.addView(TrackerStyle.button(this,
             if(readonly)"Close receipt"else if(editingSaved)"Save corrected receipt"else "Save checked fields and return",true){
             if(readonly)finish()else saveReview()
         })
         root.addView(controls)
         setContentView(root);TrackerStyle.insets(this,root)
+        fieldPicker.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
+            override fun onNothingSelected(parent:AdapterView<*>?){}
+            override fun onItemSelected(parent:AdapterView<*>?,view:View?,index:Int,id:Long){
+                if(index!=position)selectField(index)
+            }
+        }
         entry.addTextChangedListener(object:TextWatcher{
             override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
             override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){
@@ -175,6 +218,7 @@ class ReceiptReviewActivity:Activity() {
                 val key=fields[position].key
                 val value=s?.toString().orEmpty()
                 if(values[key]!=value){
+                    clearSuggestion()
                     values[key]=value
                     if(key=="cardLast4"||key=="cardType")acknowledgement.isChecked=false
                     renderCard()
@@ -184,11 +228,28 @@ class ReceiptReviewActivity:Activity() {
         })
         renderField()
     }
+    private fun clearSuggestion(){
+        suggestion=null
+        if(!::suggestionText.isInitialized)return
+        suggestionText.visibility=View.GONE
+        suggestionAccept.visibility=View.GONE
+        suggestionDiscard.visibility=View.GONE
+    }
+    private fun selectField(index:Int){
+        if(index !in fields.indices)return
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.hideSoftInputFromWindow(entry.windowToken,0)
+        entry.clearFocus()
+        clearSuggestion()
+        position=index
+        renderField()
+    }
     /** Crop around the tapped text, upscale, then rerun ML Kit entirely on device. */
     private fun rescanAt(x:Float,y:Float){
         if(readonly||scanning)return
         val bitmap=image?:return
         val field=fields[position]
+        clearSuggestion()
         val w=bitmap.width;val h=bitmap.height
         val cropW=(w*0.34f).toInt().coerceAtLeast(80).coerceAtMost(w)
         val cropH=(h*0.075f).toInt().coerceAtLeast(48).coerceAtMost(h)
@@ -215,18 +276,24 @@ class ReceiptReviewActivity:Activity() {
             }else{
                 val (line,value)=best
                 val rect=line.boundingBox
-                if(rect!=null){
-                    val b=ReceiptEvidence(field.key,ReceiptPrivacy.redact(line.text),
+                val box=if(rect!=null){
+                    ReceiptEvidence(field.key,ReceiptPrivacy.redact(line.text),
                         ((left+rect.left.toFloat()/factor)/w).coerceIn(0f,1f),
                         ((top+rect.top.toFloat()/factor)/h).coerceIn(0f,1f),
                         ((left+rect.right.toFloat()/factor)/w).coerceIn(0f,1f),
                         ((top+rect.bottom.toFloat()/factor)/h).coerceIn(0f,1f),"tap-rescan")
-                    tappedLocations[field.key]=b
-                    overlay.addHighlight(b)
+                }else null
+                if(fields[position].key!=field.key){
+                    evidenceText.text="You changed fields during the scan; the old result was ignored."
+                }else{
+                    // OCR must never change another field or overwrite the current value.
+                    suggestion=ScanProposal(field.key,value,box)
+                    suggestionText.text="Suggested value: $value. Current value: ${values[field.key].orEmpty().ifBlank{"blank"}}."
+                    suggestionText.visibility=View.VISIBLE
+                    suggestionAccept.visibility=View.VISIBLE
+                    suggestionDiscard.visibility=View.VISIBLE
+                    evidenceText.text="This is a suggestion for ${field.title} ONLY. Accept it or ignore it."
                 }
-                values[field.key]=value
-                renderField()
-                evidenceText.text="Tap scan found: "+ReceiptPrivacy.redact(value)+". Verify before saving."
             }
         }.addOnFailureListener{
             evidenceText.text="Could not read that area. Try again or type the value."
@@ -241,14 +308,14 @@ class ReceiptReviewActivity:Activity() {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
             ?.hideSoftInputFromWindow(entry.windowToken,0)
         entry.clearFocus()
-        position=(position+direction+fields.size)%fields.size
-        renderField()
+        selectField((position+direction+fields.size)%fields.size)
     }
     private fun renderField(){
         val field=fields[position]
         overlay.activeField=field.key
-        count.text="FIELD "+(position+1)+" OF "+fields.size+"   •   RED: SELECTED   YELLOW: OTHER FIELDS"
-        prompt.text=field.title
+        if(fieldPicker.selectedItemPosition!=position)fieldPicker.setSelection(position)
+        count.text="Field "+(position+1)+" of "+fields.size+" • Red: selected area; yellow: other fields"
+        prompt.text=if(readonly)"Recorded field (read only)" else "Current value (only this field is editable)"
         val target=evidence.firstOrNull{it.field==field.key}
         evidenceText.text=if(target==null)"Not located by the scanner; check the full photograph."
             else "Found in "+target.source+" OCR: "+target.recognized.take(140)
@@ -259,6 +326,7 @@ class ReceiptReviewActivity:Activity() {
             else->InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         }
         entry.filters=if(field.key=="cardLast4")arrayOf(InputFilter.LengthFilter(4))else emptyArray()
+        entry.contentDescription="Edit ${field.title} only"
         entry.setText(values[field.key].orEmpty())
         entry.setSelection(entry.text.length)
         entry.isEnabled=!readonly
@@ -281,7 +349,9 @@ class ReceiptReviewActivity:Activity() {
             if(card.status=="MATCH")TrackerStyle.green else TrackerStyle.muted)
         cardStatus.background=TrackerStyle.shape(this,
             if(card.mismatch)TrackerStyle.blush else TrackerStyle.background)
-        acknowledgement.visibility=if(!readonly&&card.mismatch)View.VISIBLE else View.GONE
+        val reviewingCard=fields[position].key=="cardLast4"||fields[position].key=="cardType"
+        cardStatus.visibility=if(reviewingCard)View.VISIBLE else View.GONE
+        acknowledgement.visibility=if(!readonly&&card.mismatch&&reviewingCard)View.VISIBLE else View.GONE
     }
     private fun saveDraft(){
         if(readonly||editingSaved||saved)return
@@ -298,13 +368,12 @@ class ReceiptReviewActivity:Activity() {
     override fun onDestroy(){image?.recycle();image=null;super.onDestroy()}
     private fun learnConfirmedLocations(changedKeys:JSONArray) {
         val station=values["station"].orEmpty()
-        val changed=(0 until changedKeys.length()).map{changedKeys.optString(it)}.toSet()
         for(field in fields){
             if(values[field.key].orEmpty().isBlank())continue
-            // Explicitly corrected OCR evidence teaches the station's field position.
-            // A tapped rescan teaches its newly confirmed position. Never learn values.
-            val location=tappedLocations[field.key] ?: if(field.key in changed)
-                evidence.firstOrNull{it.field==field.key} else null
+            // Only explicitly accepted tapped locations teach layout positions.
+            // A manually corrected value alone cannot prove that the scanner
+            // associated the original OCR box with the right field.
+            val location=tappedLocations[field.key]
             if(location!=null)runCatching{ReceiptLocalLearning.learn(this,station,field.key,location)}
         }
     }
@@ -315,13 +384,13 @@ class ReceiptReviewActivity:Activity() {
         }
         val suffix=values["cardLast4"].orEmpty()
         if(suffix.isNotBlank()&&ReceiptPrivacy.last4(suffix).isBlank()){
-            position=8;renderField()
+            selectField(8)
             entry.error="Enter the last four digits only, or leave blank when unreadable"
             return
         }
         val card=cardCheck()
         if(card.mismatch&&!acknowledgement.isChecked){
-            position=8;renderField()
+            selectField(8)
             android.app.AlertDialog.Builder(this).setTitle("Different card found")
                 .setMessage(card.message+"\nCheck the highlighted digits on the receipt. " +
                     "If the other card was actually used, check the acknowledgment before saving.")
