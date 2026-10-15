@@ -67,6 +67,22 @@ object ReceiptReader {
             listOf(s.date, s.station, s.cardType, s.cardLast4).count { it.isNotBlank() } * 2 -
             s.warnings.size
 
+    /** Only fill missing OCR fields from learned positions; always require user review. */
+    private fun applyHints(context:Context,scan:FuelScan,lines:List<ReceiptOcrLine>):FuelScan {
+        if(scan.station.isBlank())return scan
+        fun find(field:String,current:String):String {
+            if(current.isNotBlank())return current
+            val line=ReceiptLocalLearning.candidate(context,scan.station,field,lines)?:return ""
+            return ReceiptLocalLearning.extract(field,line.text)
+        }
+        return scan.copy(
+            gallons=find("gallons",scan.gallons),price=find("price",scan.price),
+            total=find("total",scan.total),date=find("date",scan.date),
+            time=find("time",scan.time),fuelType=find("fuelType",scan.fuelType),
+            cardType=find("cardType",scan.cardType),cardLast4=find("cardLast4",scan.cardLast4)
+        )
+    }
+
     private fun contrastEnhanced(context: Context, uri: Uri): Bitmap? {
         val source = ReceiptImage.loadUpright(context, uri, 2200) ?: return null
         val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
@@ -93,7 +109,7 @@ object ReceiptReader {
                 val first=ReceiptTextParser.parse(result.text)
                 val lines1=ReceiptEvidenceMatcher.capture(result, image.width, image.height, "original")
                 fun withEvidence(data:FuelScan, lines:List<ReceiptOcrLine>):FuelScan =
-                    data.copy(evidence=ReceiptEvidenceMatcher.locate(data,lines))
+                    applyHints(context,data,lines).let{it.copy(evidence=ReceiptEvidenceMatcher.locate(it,lines))}
 
                 if(first.gallons.isNotBlank() && first.price.isNotBlank() &&
                     first.total.isNotBlank() && first.cardType.isNotBlank() && first.cardLast4.isNotBlank()) {
