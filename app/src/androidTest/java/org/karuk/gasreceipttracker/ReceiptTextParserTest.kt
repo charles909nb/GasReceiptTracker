@@ -33,6 +33,7 @@ class ReceiptTextParserTest {
         assertEquals("6.9993",result.price)
         assertEquals("61.35",result.total)
         assertEquals("5678",result.cardLast4)
+        assertEquals("5",result.pump)
         assertEquals("Visa",result.cardType)
         assertEquals("UNLEAD REG",result.fuelType)
         assertTrue(result.warnings.toString(),result.warnings.isEmpty())
