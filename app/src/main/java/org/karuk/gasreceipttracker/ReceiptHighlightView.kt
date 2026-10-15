@@ -65,6 +65,7 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
                 "price"->"Price/gal"
                 "total"->"Fuel total"
                 "gallons"->"Gallons"
+                "pump"->"Pump number"
                 "station"->"Station"
                 "date"->"Receipt date"
                 "time"->"Receipt time"
