@@ -16,6 +16,14 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
     private val marks:List<ReceiptEvidence>,private val onSelect:(String)->Unit,
     private val onTap:((Float,Float)->Unit)?=null):View(context) {
 
+    private val rescanMarks=mutableListOf<ReceiptEvidence>()
+    private fun allMarks():List<ReceiptEvidence> = marks.filter{old->rescanMarks.none{it.field==old.field}}+rescanMarks
+    fun addHighlight(mark:ReceiptEvidence) {
+        rescanMarks.removeAll{it.field==mark.field}
+        rescanMarks.add(mark)
+        invalidate()
+    }
+
     var activeField:String="gallons"
         set(value){field=value;invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -33,8 +41,9 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
         canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),paint)
         paint.color=Color.WHITE
         canvas.drawBitmap(bitmap,null,RectF(0f,0f,width.toFloat(),height.toFloat()),paint)
-        val active=marks.filter{it.field==activeField}
-        for(mark in marks.filter{it.field!=activeField}+active){
+        val currentMarks=allMarks()
+        val active=currentMarks.filter{it.field==activeField}
+        for(mark in currentMarks.filter{it.field!=activeField}+active){
             val rectangle=toScreen(mark)
             val focused=mark.field==activeField
             paint.style=Paint.Style.FILL
@@ -75,13 +84,13 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
     }
     private fun toScreen(e:ReceiptEvidence)=RectF(
         e.left*width,e.top*height,e.right*width,e.bottom*height)
-    fun selectedRect():RectF?=marks.firstOrNull{it.field==activeField}?.let{toScreen(it)}
-    fun hasHighlight(field:String)=marks.any{it.field==field}
+    fun selectedRect():RectF?=allMarks().firstOrNull{it.field==activeField}?.let{toScreen(it)}
+    fun hasHighlight(field:String)=allMarks().any{it.field==field}
     override fun onTouchEvent(event:MotionEvent):Boolean {
         if(event.actionMasked!=MotionEvent.ACTION_UP)return true
         val x=event.x/width.coerceAtLeast(1)
         val y=event.y/height.coerceAtLeast(1)
-        val exact=marks.filter{it.left-.02f<=x && it.right+.02f>=x
+        val exact=allMarks().filter{it.left-.02f<=x && it.right+.02f>=x
             && it.top-.012f<=y && it.bottom+.012f>=y}
             .minByOrNull{(it.right-it.left)*(it.bottom-it.top)}
         if(exact!=null && exact.field!=activeField)onSelect(exact.field)
