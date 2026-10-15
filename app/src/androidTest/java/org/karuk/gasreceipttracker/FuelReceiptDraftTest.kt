@@ -156,8 +156,9 @@ class FuelReceiptDraftTest {
             .putString("ocr_gallons","8.765")
             .putString("ocr_price","6.9993")
             .putString("ocr_total","61.35").commit()
-        ins.runOnMainSync{a.onActivityResult(211,Activity.RESULT_OK,null)}
-        ins.waitForIdleSync()
+        // Simulate returning to Fuel after capture. The page recovers and persists
+        // the pending image/OCR, without requiring a complete odometer entry.
+        click("Fuel")
         click("Save fuel receipt")
         val draft=JSONArray(prefs.getString("receipts","[]")).getJSONObject(0)
         assertEquals("draft",draft.getString("status"))
