@@ -327,11 +327,11 @@ class ReceiptReviewActivity:Activity() {
                 .setPositiveButton("Review card",null).show()
             return
         }
-        if(values["date"].orEmpty().isBlank() || values["station"].orEmpty().isBlank() ||
+        if(editingSaved && (values["date"].orEmpty().isBlank() || values["station"].orEmpty().isBlank() ||
             (values["gallons"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0 ||
             (values["total"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0 ||
             (values["price"].orEmpty().isNotBlank() &&
-                (values["price"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0)) {
+                (values["price"].orEmpty().toDoubleOrNull() ?: 0.0) <= 0.0))) {
             Toast.makeText(this,"Check the station, date, gallons, unit price and total before saving.",
                 Toast.LENGTH_LONG).show()
             return
