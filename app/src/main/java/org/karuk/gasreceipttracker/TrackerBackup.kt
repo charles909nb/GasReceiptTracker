@@ -14,7 +14,7 @@ import java.util.zip.ZipOutputStream
 object TrackerBackup {
     private val keys = (RequestWorkflow.DRAFT_KEYS + RequestWorkflow.PROFILE_KEYS + listOf(
         "trips","receipts","archives","signatureFile","emailTo","emailSubject","emailBody","myEmail","emailCc",
-        "vehicles","ccSelf","setupDone",RequestWorkflow.STATE)).distinct()
+        "vehicles","ccSelf","setupDone",ReceiptLocalLearning.KEY,RequestWorkflow.STATE)).distinct()
     private fun safeName(name:String)=name.matches(Regex("(?:receipt_[0-9]+\\.jpg|reimbursement_signature\\.png|signature_[a-zA-Z0-9_-]+\\.png)"))
     private fun safeExport(name:String)=name.matches(Regex("[A-Za-z0-9_-]+\\.(?:pdf|xls)"))
     fun export(context:Context,destination:Uri){
