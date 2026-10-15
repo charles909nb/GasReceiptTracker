@@ -39,9 +39,9 @@ class SavedReceiptCorrectionTest {
         assertEquals("original-fuel-receipt",updated.getString("id"))
         assertEquals("file:///private/receipt_1.jpg",updated.getString("image"))
         assertEquals("64.00",updated.getString("cost"))
-        assertEquals("54.00",JSONObject(prefs.getString(RequestWorkflow.STATE,"{}"))
+        assertEquals("TOTAL $54.00",JSONObject(prefs.getString(RequestWorkflow.STATE,"{}"))
             .getJSONArray("orders").getJSONObject(0).getJSONArray("receipts")
-            .getJSONObject(0).getString("ocrRawText").let{if(it=="TOTAL $54.00")"54.00"else it})
+            .getJSONObject(0).getString("ocrRawText"))
         TrackerDatabase(ctx).use{db->
             assertEquals(1,db.receiptSearch("64.00").size)
             assertEquals(0,db.receiptSearch("54.00").size)
