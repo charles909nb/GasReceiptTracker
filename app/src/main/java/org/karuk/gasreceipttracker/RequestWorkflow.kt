@@ -20,7 +20,7 @@ class RequestWorkflow(private val context: Context) {
         const val PENDING_EMAIL = "pendingRequestEmail"
         val DRAFT_KEYS = listOf("pending_receipt", "ocr_station", "ocr_date", "ocr_gallons", "ocr_price", "ocr_total",
             "draftOdometer", "draftStation", "draftDate", "draftGallons", "draftPrice", "draftTotal",
-            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle",
+            "draftStartOdometer", "draftDestination", "draftPurpose", "draftEndOdometer", "draftFuelVehicle", "draftFuelReceiptId",
             "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn",
             "ocr_card_type", "ocr_evidence", "ocr_reviewed_at", "ocr_corrections",
             "ocr_card_verification", "ocr_card_mismatch_ack",
@@ -203,7 +203,10 @@ class RequestWorkflow(private val context: Context) {
         check(pref(PENDING_EMAIL).isBlank()) { "A previous email still needs your confirmation." }
         val s = load(); capture(s); val a = active(s)
         check(!hasOpenTrip(a)) { "Finish the current trip before sending its request." }
-        check(a.getJSONArray("receipts").length() == 1) { "This request needs one fuel receipt." }
+        check(a.getJSONArray("receipts").length() == 1 &&
+            FuelReceiptDraft.complete(a.getJSONArray("receipts").getJSONObject(0))) {
+            "Complete the saved fuel receipt before preparing Finance email."
+        }
         check(signed()) { "Sign this request first." }
         val pending = JSONObject().put("token", UUID.randomUUID().toString()).put("requestId", a.getString("id"))
             .put("reference", a.getString("reference")).put("fingerprint", fingerprint(a)).put("uri", uri)
