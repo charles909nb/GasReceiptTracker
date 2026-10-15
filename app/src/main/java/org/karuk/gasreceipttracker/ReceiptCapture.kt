@@ -56,7 +56,7 @@ data class FuelScan(
     val station: String, val date: String, val gallons: String, val price: String, val total: String,
     val rawText: String, val fuelType: String = "", val cardLast4: String = "", val time: String = "",
     val warnings: List<String> = emptyList(), val cardType: String = "",
-    val evidence: List<ReceiptEvidence> = emptyList()
+    val evidence: List<ReceiptEvidence> = emptyList(), val pump: String = ""
 )
 
 /** Two offline OCR passes can contribute word boxes; do not fabricate an
@@ -79,7 +79,8 @@ object ReceiptReader {
             gallons=find("gallons",scan.gallons),price=find("price",scan.price),
             total=find("total",scan.total),date=find("date",scan.date),
             time=find("time",scan.time),fuelType=find("fuelType",scan.fuelType),
-            cardType=find("cardType",scan.cardType),cardLast4=find("cardLast4",scan.cardLast4)
+            cardType=find("cardType",scan.cardType),cardLast4=find("cardLast4",scan.cardLast4),
+            pump=find("pump",scan.pump)
         )
     }
 
