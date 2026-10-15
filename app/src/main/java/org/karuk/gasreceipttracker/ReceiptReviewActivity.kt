@@ -337,6 +337,7 @@ class ReceiptReviewActivity:Activity() {
                 Toast.LENGTH_LONG).show()
             return
         }
+        val evidenceAtConfirmation=evidence.filter{old->tappedLocations[old.field]==null}+tappedLocations.values
         val corrections=if(editingSaved) JSONArray(savedReceipt.optJSONArray("ocrCorrections")?.toString()?:"[]") else JSONArray()
         val changedKeys=JSONArray()
         for(field in fields) if(original[field.key].orEmpty().trim()!=values[field.key].orEmpty().trim())
@@ -353,6 +354,7 @@ class ReceiptReviewActivity:Activity() {
                 updates.put(field.record, values[field.key].orEmpty().trim())
             updates.put("changedFields",changedKeys)
                 .put("ocrCorrections",corrections)
+                .put("ocrEvidence",ReceiptEvidence.asJson(evidenceAtConfirmation))
                 .put("reviewedAt",timestamp())
                 .put("cardVerificationStatus",if(card.mismatch)"MISMATCH_ACKNOWLEDGED" else card.status)
                 .put("cardMismatchAcknowledged",card.mismatch&&acknowledgement.isChecked)
@@ -373,6 +375,7 @@ class ReceiptReviewActivity:Activity() {
         }
         val editor=prefs.edit()
         for(field in fields)editor.putString(field.pref,values[field.key].orEmpty().trim())
+        editor.putString("ocr_evidence",ReceiptEvidence.asJson(evidenceAtConfirmation).toString())
         editor.putString("ocr_card_verification",if(card.mismatch)"MISMATCH_ACKNOWLEDGED"else card.status)
             .putString("ocr_card_mismatch_ack",(card.mismatch&&acknowledgement.isChecked).toString())
             .putString("ocr_profile_card_last4_at_review",pref("cardLast4"))
