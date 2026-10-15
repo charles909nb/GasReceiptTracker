@@ -158,7 +158,7 @@ class WorkflowTest {
     private fun screenshot(name:String){Thread.sleep(350);ins.uiAutomation.takeScreenshot()?.let{b->File(out,name+".png").outputStream().use{b.compress(Bitmap.CompressFormat.PNG,100,it)};b.recycle()}}
     @Test fun redesignedNavigationRetainsAllSections(){
         seed();val a=launch();assertTrue(visibleText(a,"Your travel workspace"));screenshot("UI_Home")
-        click(a,"Fuel");assertTrue(visibleText(a,"Scan receipt"))
+        click(a,"Fuel");assertTrue(visibleText(a,"Saved receipts (1)"))
         click(a,"Docs");assertTrue(visibleText(a,"Original Karuk Gas worksheet included"));screenshot("UI_Documents")
         click(a,"Requests");assertTrue(visibleText(a,"Queue travel or work order"));screenshot("UI_Requests")
         click(a,"More");assertTrue(visibleText(a,"Backup and restore"));screenshot("UI_More")
