@@ -16,6 +16,7 @@ object ReceiptTextParser {
     private val pricePerGallon = Regex("""(?:\bPRICE\s*(?:/|PER\s+)\s*GAL(?:LON)?\b|\bUNIT\s*PRICE\b|\bP\s*/\s*G\b|\bCOST\s*/\s*GAL\b)\s*[:=$-]?\s*\$?\s*(\d{1,3}[.,]\d{2,4})\b""", RegexOption.IGNORE_CASE)
     private val money = Regex("""(?<![\d.])\$?\s*(\d{1,6}[.,]\d{2})(?!\d)""")
     private val date = Regex("""(?<!\d)(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})(?!\d)""")
+    private val pumpNumber = Regex("""\\b(?:PUMP|PMP|DISPENSER)\\s*(?:NO\\.?|NUMBER|#|:)?\\s*#?\\s*(\\d{1,3})\\b""", RegexOption.IGNORE_CASE)
     private val time = Regex("""(?<!\d)(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)(?!\d)""", RegexOption.IGNORE_CASE)
     private val maskedCard = Regex("""(?:[X*#]{4,}[-\s]*)(\d{4})\b""", RegexOption.IGNORE_CASE)
     private val brandPattern = Regex("""\b(?:VISA|MASTER\s*CARD|MASTERCARD|AMEX|AMERICAN\s*EXPRESS|DISCOVER)\b""", RegexOption.IGNORE_CASE)
@@ -73,7 +74,8 @@ object ReceiptTextParser {
             maskedCard.find(flat)?.groupValues?.get(1).orEmpty(),
             time.find(rawText)?.groupValues?.get(1).orEmpty(),
             warnings,
-            ReceiptPrivacy.brand(brandPattern.find(rawText)?.value.orEmpty())
+            ReceiptPrivacy.brand(brandPattern.find(rawText)?.value.orEmpty()),
+            pump=pumpNumber.find(flat)?.groupValues?.get(1).orEmpty()
         )
     }
 }
