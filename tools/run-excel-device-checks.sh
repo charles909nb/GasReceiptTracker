@@ -30,6 +30,7 @@ test -s verification/UI_Finance_Guided_Search.png
 old_debug_apk=$(mktemp /tmp/grt-old-XXXXXX.apk)
 cp app/build/outputs/apk/debug/app-debug.apk "$old_debug_apk"
 adb install -r "$old_debug_apk"
+adb shell run-as org.karuk.gasreceipttracker.preview mkdir -p files
 printf 'update-marker-preserved\n' | adb shell run-as org.karuk.gasreceipttracker.preview sh -c 'cat > files/upgrade_marker.txt'
 gradle --no-daemon --stacktrace :app:assembleDebug -PtestVersionCodeOverride=15
 adb install -r app/build/outputs/apk/debug/app-debug.apk
