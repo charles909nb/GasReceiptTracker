@@ -24,7 +24,7 @@ class RequestWorkflow(private val context: Context) {
             "ocr_raw", "ocr_fuel_type", "ocr_card_last4", "ocr_time", "ocr_warn",
             "ocr_card_type", "ocr_evidence", "ocr_reviewed_at", "ocr_corrections",
             "ocr_card_verification", "ocr_card_mismatch_ack",
-            "ocr_profile_card_last4_at_review", "ocr_profile_card_brand_at_review")
+            "ocr_profile_card_last4_at_review", "ocr_profile_card_brand_at_review", "ocr_pump")
         val PROFILE_KEYS = listOf("driver", "vehicle", "department", "cardLast4", "cardBrand")
         fun stamp() = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date())
     }
@@ -164,7 +164,7 @@ class RequestWorkflow(private val context: Context) {
             .firstOrNull { it.optString("id") == receiptId }
             ?: error("The original saved receipt cannot be found.")
         val allowed = setOf("station", "date", "receiptTime", "fuelType", "gallons", "price",
-            "cost", "cardType", "receiptCardLast4", "cardLast4", "cardVerificationStatus",
+            "cost", "pumpNumber", "cardType", "receiptCardLast4", "cardLast4", "cardVerificationStatus",
             "cardMismatchAcknowledged", "reviewedAt", "ocrCorrections")
         for (key in allowed) if (updates.has(key)) receipt.put(key, updates.get(key))
         val revision = JSONObject().put("at", stamp())
