@@ -172,6 +172,13 @@ class MainActivity : Activity() {
         body.addView(TrackerStyle.card(this,"Your workspace","Version "+version+"  •  Original Karuk Gas worksheet included"))
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
         action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
+        action("Clear offline receipt learning"){
+            android.app.AlertDialog.Builder(this).setTitle("Clear learned receipt layouts?")
+                .setMessage("This deletes saved station layout hints only. Your receipts and Finance packets remain unchanged.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Clear"){_,_->
+                    ReceiptLocalLearning.clear(this);alert("Local receipt learning cleared")
+                }.show()
+        }
     }
     private fun trips(){
         draw("Your travel workspace");requestBanner();action("New travel / PR"){newRequestDialog(false)}
