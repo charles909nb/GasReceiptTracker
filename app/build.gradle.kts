@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 14)
-        versionName = "2.3-guided-search"
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 16)
+        versionName = "2.4-offline-tap-learning"
     }
     buildTypes {
         getByName("debug") {
