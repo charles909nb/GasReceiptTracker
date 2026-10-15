@@ -76,9 +76,9 @@ class ReceiptReviewActivity:Activity() {
         JSONObject(pref(RequestWorkflow.STATE)).optString("activeId")
     }.getOrDefault("")
     private fun cardCheck():CardCheck{
-        val suffix=if(readonly)savedReceipt.optString("profileCardLast4AtReview").ifBlank{pref("cardLast4")}
+        val suffix=if(readonly||editingSaved)savedReceipt.optString("profileCardLast4AtReview").ifBlank{pref("cardLast4")}
             else pref("cardLast4")
-        val brand=if(readonly)savedReceipt.optString("profileCardBrandAtReview").ifBlank{pref("cardBrand")}
+        val brand=if(readonly||editingSaved)savedReceipt.optString("profileCardBrandAtReview").ifBlank{pref("cardBrand")}
             else pref("cardBrand")
         return ReceiptCardVerifier.verify(suffix,brand,
             values["cardLast4"].orEmpty(),values["cardType"].orEmpty())
