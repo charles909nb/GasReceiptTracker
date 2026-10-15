@@ -90,13 +90,13 @@ class ReceiptReviewActivity:Activity() {
         readonly=intent.getBooleanExtra(EXTRA_HISTORY,false) && !editingSaved
         expectedRequestId=intent.getStringExtra(EXTRA_REQUEST_ID).orEmpty()
         savedReceipt=runCatching{JSONObject(intent.getStringExtra(EXTRA_RECEIPT)?:"{}")}.getOrDefault(JSONObject())
-        val path=if(readonly)savedReceipt.optString("image")else pref("pending_receipt")
+        val path=if(readonly||editingSaved)savedReceipt.optString("image")else pref("pending_receipt")
         if(path.isBlank()){errorScreen("No receipt image is attached.");return}
         image=runCatching{ReceiptImage.loadUpright(this,Uri.parse(path))}.getOrNull()
         if(image==null){errorScreen("The receipt photograph could not be opened. Your saved records were not modified.");return}
-        evidence=ReceiptEvidence.fromArray(if(readonly)
+        evidence=ReceiptEvidence.fromArray(if(readonly||editingSaved)
             savedReceipt.optJSONArray("ocrEvidence")?.toString()?:"[]" else pref("ocr_evidence"))
-        for(field in fields)values[field.key]=if(readonly)savedReceipt.optString(field.record)else pref(field.pref)
+        for(field in fields)values[field.key]=if(readonly||editingSaved)savedReceipt.optString(field.record)else pref(field.pref)
         original=values.toMap()
         if(readonly)position=8
         buildScreen()
