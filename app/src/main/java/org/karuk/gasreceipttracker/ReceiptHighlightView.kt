@@ -13,7 +13,8 @@ import kotlin.math.roundToInt
 /** The receipt photograph remains unaltered. Highlights are a separate,
  * interactive drawing layer created from actual ML Kit word coordinates. */
 class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
-    private val marks:List<ReceiptEvidence>,private val onSelect:(String)->Unit):View(context) {
+    private val marks:List<ReceiptEvidence>,private val onSelect:(String)->Unit,
+    private val onTap:((Float,Float)->Unit)?=null):View(context) {
 
     var activeField:String="gallons"
         set(value){field=value;invalidate()}
@@ -83,7 +84,9 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
         val exact=marks.filter{it.left-.02f<=x && it.right+.02f>=x
             && it.top-.012f<=y && it.bottom+.012f>=y}
             .minByOrNull{(it.right-it.left)*(it.bottom-it.top)}
-        if(exact!=null){onSelect(exact.field);performClick()}
+        if(exact!=null && exact.field!=activeField)onSelect(exact.field)
+        else onTap?.invoke(x,y)
+        performClick()
         return true
     }
     override fun performClick():Boolean {super.performClick();return true}
