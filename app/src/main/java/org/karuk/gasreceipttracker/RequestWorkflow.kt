@@ -165,7 +165,7 @@ class RequestWorkflow(private val context: Context) {
             ?: error("The original saved receipt cannot be found.")
         val allowed = setOf("station", "date", "receiptTime", "fuelType", "gallons", "price",
             "cost", "pumpNumber", "cardType", "receiptCardLast4", "cardLast4", "cardVerificationStatus",
-            "cardMismatchAcknowledged", "reviewedAt", "ocrCorrections")
+            "cardMismatchAcknowledged", "reviewedAt", "ocrCorrections", "ocrEvidence")
         for (key in allowed) if (updates.has(key)) receipt.put(key, updates.get(key))
         val revision = JSONObject().put("at", stamp())
             .put("changedFields", updates.optJSONArray("changedFields") ?: JSONArray())
