@@ -49,6 +49,10 @@ class ReceiptReviewActivity:Activity() {
     )
     private val prefs by lazy{getSharedPreferences("usage_data",MODE_PRIVATE)}
     private lateinit var scroller:ScrollView
+    private lateinit var receiptHorizontal:HorizontalScrollView
+    private lateinit var zoomLabel:TextView
+    private var receiptZoom=1f
+    private var receiptBaseWidth=0
     private lateinit var overlay:ReceiptHighlightView
     private lateinit var prompt:TextView
     private lateinit var fieldPicker:Spinner
@@ -142,8 +146,42 @@ class ReceiptReviewActivity:Activity() {
                 }
             },
             { x,y -> rescanAt(x,y) })
-        scroller.addView(overlay)
+        receiptBaseWidth=resources.displayMetrics.widthPixels.coerceAtLeast(dp(250))
+        receiptHorizontal=HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled=true
+            isFillViewport=true
+            addView(overlay,android.widget.FrameLayout.LayoutParams(receiptBaseWidth,-2))
+        }
+        scroller.addView(receiptHorizontal)
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
+        val zoomRow=LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(16),dp(2),dp(16),dp(2))
+            setBackgroundColor(Color.WHITE)
+        }
+        zoomLabel=TrackerStyle.text(this,"Receipt zoom 100%",12f,true,TrackerStyle.ink)
+        zoomRow.addView(zoomLabel)
+        val zoomSlider=SeekBar(this).apply {
+            max=300
+            progress=0
+            contentDescription="Receipt zoom slider, 100 to 400 percent"
+            setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar:SeekBar?,value:Int,fromUser:Boolean){
+                    if(!fromUser)return
+                    receiptZoom=1f+value/100f
+                    zoomLabel.text="Receipt zoom ${(receiptZoom*100).toInt()}%"
+                    overlay.layoutParams=overlay.layoutParams.apply {
+                        width=(receiptBaseWidth*receiptZoom).toInt()
+                    }
+                    overlay.requestLayout()
+                }
+                override fun onStartTrackingTouch(bar:SeekBar?){}
+                override fun onStopTrackingTouch(bar:SeekBar?){}
+            })
+        }
+        zoomRow.addView(zoomSlider,LinearLayout.LayoutParams(0,dp(42),1f))
+        root.addView(zoomRow)
         val controls=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(8),dp(18),dp(10));setBackgroundColor(Color.WHITE)}
         controls.addView(TrackerStyle.text(this,"1. Choose the ONE field to fix",15f,true,TrackerStyle.ink))

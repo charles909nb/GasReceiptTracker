@@ -36,8 +36,28 @@ class PdfPreviewActivity : Activity() {
         fun button(name:String,action:()->Unit){controls.addView(TrackerStyle.button(this,name,false,action).apply{textSize=12f;setPadding(4,4,4,4)},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(2,4,2,4)})}
         button("Done"){setResult(RESULT_OK);finish()};button("Previous"){if(index>0){index--;render()}}
         button("Next"){val n=renderer?.pageCount?:0;if(index+1<n){index++;render()}}
-        button("Zoom"){zoom=if(zoom==1f)1.6f else 1f;render()}
+
         root.addView(controls)
+        val zoomRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=android.view.Gravity.CENTER_VERTICAL}
+        val zoomText=TrackerStyle.text(this,"Zoom 100%",12f,true,TrackerStyle.ink)
+        zoomRow.addView(zoomText)
+        val zoomSlider=SeekBar(this).apply{
+            max=300
+            progress=0
+            contentDescription="PDF zoom slider, 100 to 400 percent"
+            setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+                override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean){
+                    if(fromUser)zoomText.text="Zoom ${100+progress}%"
+                }
+                override fun onStartTrackingTouch(bar:SeekBar?){}
+                override fun onStopTrackingTouch(bar:SeekBar?){
+                    zoom=1f+(bar?.progress?:0)/100f
+                    render()
+                }
+            })
+        }
+        zoomRow.addView(zoomSlider,LinearLayout.LayoutParams(0,(44*resources.displayMetrics.density).toInt(),1f))
+        root.addView(zoomRow)
         image=ImageView(this).apply{setBackgroundColor(Color.WHITE);adjustViewBounds=true}
         val vertical=ScrollView(this);val horizontal=HorizontalScrollView(this)
         horizontal.addView(image);vertical.addView(horizontal);root.addView(vertical,LinearLayout.LayoutParams(-1,0,1f))
@@ -60,8 +80,8 @@ class PdfPreviewActivity : Activity() {
             try{
                 val pdf=renderer?:return@execute
                 val new=pdf.openPage(selected).use { page ->
-                    val desired=(resources.displayMetrics.widthPixels*requestedZoom).coerceIn(400f,1600f)
-                    val factor=minOf(desired/page.width,2400f/page.height)
+                    val desired=(resources.displayMetrics.widthPixels*requestedZoom).coerceIn(400f,4000f)
+                    val factor=minOf(desired/page.width,6000f/page.height)
                     val width=(page.width*factor).toInt().coerceAtLeast(1)
                     val height=(page.height*factor).toInt().coerceAtLeast(1)
                     Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888).also{it.eraseColor(Color.WHITE);page.render(it,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)}
