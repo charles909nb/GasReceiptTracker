@@ -750,7 +750,7 @@ class MainActivity : Activity() {
         body.addView(reviewChoice)
         action("Review selected documents"){
             when(reviewChoice.selectedItemPosition){
-                0->exportPdf(JSONArray(),receipts,true)
+                0->exportPdf(JSONArray(),receipts,true,false)
                 1->exportPdf(entries,JSONArray(),true)
                 2->continueDocument("requisition")
                 3->exportPdf(entries,receipts,true)
@@ -803,7 +803,7 @@ class MainActivity : Activity() {
         prefs.edit().putString("pdfPreviewReturn",currentScreen).commit()
         startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
     }
-    private fun exportPdf(entries:JSONArray,receipts:JSONArray,previewOnly:Boolean=false){
+    private fun exportPdf(entries:JSONArray,receipts:JSONArray,previewOnly:Boolean=false,includeUsage:Boolean=true){
         if(entries.length()==0&&receipts.length()==0){alert("No records to export");return}
         val doc=PdfDocument();val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.BLACK;textSize=12f};var pageNo=0
         try{
@@ -823,7 +823,7 @@ class MainActivity : Activity() {
                 page.canvas.drawBitmap(bitmap,null,android.graphics.RectF(35f,55f,35f+bitmap.width*scale,55f+bitmap.height*scale),paint)
                 doc.finishPage(page);bitmap.recycle()
             }
-            VehicleUsagePdf.append(doc,entries,receipts,pageNo+1)
+            if(includeUsage)VehicleUsagePdf.append(doc,entries,receipts,pageNo+1)
             val file=java.io.File(filesDir,"exports/Vehicle_Usage_"+System.currentTimeMillis()+".pdf").apply{parentFile?.mkdirs()}
             file.outputStream().use{doc.writeTo(it)}
             val uri=OfficialPurchaseRequisition.uri(this,file)
