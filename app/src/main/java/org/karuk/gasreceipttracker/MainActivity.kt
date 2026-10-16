@@ -678,16 +678,30 @@ class MainActivity : Activity() {
         if(requestCode==209){offerEmailConfirmation();return}
         if(requestCode==210){
             val valid=resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current())
-            if(valid)prefs.edit().putString("reviewedRequestFingerprint",pref("reviewPendingFingerprint")).commit()
             val stage=prefs.getInt("packetReviewStage",-1)
+            val direction=data?.getIntExtra("formDirection",0)?:0
             val back=pref("pdfPreviewReturn").ifBlank{"sheets"}
             prefs.edit().remove("reviewPendingFingerprint").remove("pdfPreviewReturn").commit()
             if(stage>=0){
-                if(valid){
-                    if(stage<2){prefs.edit().putInt("packetReviewStage",stage+1).commit();reviewPacketStage(stage+1)}
-                    else{prefs.edit().remove("packetReviewStage").putString("packetReviewApproved",packetReviewIdentity()).commit();show("sheets");alert("Three documents reviewed. Email is ready.")}
-                }else{prefs.edit().remove("packetReviewStage").remove("packetReviewApproved").commit();show("sheets");alert("Review incomplete. Start again before emailing.")}
-            }else show(back)
+                if(valid&&direction==-1&&stage>0){
+                    prefs.edit().putInt("packetReviewStage",stage-1).commit()
+                    reviewPacketStage(stage-1)
+                }else if(valid&&direction==1){
+                    if(stage<2){
+                        prefs.edit().putInt("packetReviewStage",stage+1).commit()
+                        reviewPacketStage(stage+1)
+                    }else{
+                        prefs.edit().remove("packetReviewStage").putString("packetReviewApproved",packetReviewIdentity()).commit()
+                        continueDocument("email")
+                    }
+                }else{
+                    prefs.edit().remove("packetReviewStage").remove("packetReviewApproved").commit()
+                    show("sheets")
+                }
+            }else{
+                if(valid)prefs.edit().putString("reviewedRequestFingerprint",workflow.fingerprint(workflow.current())).commit()
+                show(back)
+            }
             return
         }
         if(resultCode!=RESULT_OK)return
@@ -762,15 +776,12 @@ class MainActivity : Activity() {
                 1->exportPdf(entries,JSONArray(),true)
                 2->continueDocument("requisition")
                 3->exportPdf(entries,receipts,true)
-                else->continueDocument("packet")
+                else->startPacketReview()
             }
         }
         val receiptReady=receipts.length()==1&&FuelReceiptDraft.complete(receipts.optJSONObject(0)?:JSONObject())
         val approved=pref("packetReviewApproved")==packetReviewIdentity()
-        action(if(approved)"Email reimbursement packet" else "Review all 3 documents before emailing"){
-            if(!receiptReady)alert("Complete and save the fuel receipt first.")
-            else if(!approved)startPacketReview() else continueDocument("email")
-        }
+        label(if(approved)"Packet reviewed. Select Complete reimbursement packet to open email." else "Complete packet: Next / Previous moves between the three forms; email opens automatically after the last form.",13f)
         if(!receiptReady)label("Email not ready: a completed fuel receipt is required.",13f)
         label("Additional document options",16f)
         action("More document options"){
@@ -808,12 +819,16 @@ class MainActivity : Activity() {
         }.start()
     }
     private fun packetReviewIdentity():String=workflow.fingerprint(workflow.current())+"|"+data("trips").toString()+"|"+data("receipts").toString()+"|"+pref("signatureFile")
-    private fun startPacketReview(){prefs.edit().remove("packetReviewApproved").putInt("packetReviewStage",0).commit();reviewPacketStage(0)}
+    private fun startPacketReview(){
+        val receipts=data("receipts")
+        if(receipts.length()!=1||!FuelReceiptDraft.complete(receipts.optJSONObject(0)?:JSONObject())){alert("Finish the fuel receipt before reviewing the complete packet.");return}
+        prefs.edit().remove("packetReviewApproved").putInt("packetReviewStage",0).commit();reviewPacketStage(0)
+    }
     private fun reviewPacketStage(stage:Int){when(stage){0->continueDocument("packet-review-pr");1->exportPdf(JSONArray(),data("receipts"),true,false);2->exportPdf(data("trips"),JSONArray(),true)}}
     private fun previewPdf(uri:Uri,track:Boolean=false){
         if(track)prefs.edit().putString("reviewPendingFingerprint",workflow.fingerprint(workflow.current())).commit()
         prefs.edit().putString("pdfPreviewReturn",currentScreen).commit()
-        startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).putExtra("requireAllPages",prefs.getInt("packetReviewStage",-1)>=0).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
+        startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).putExtra("requireAllPages",prefs.getInt("packetReviewStage",-1)>=0).putExtra("formStage",prefs.getInt("packetReviewStage",-1)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
     }
     private fun exportPdf(entries:JSONArray,receipts:JSONArray,previewOnly:Boolean=false,includeUsage:Boolean=true){
         if(entries.length()==0&&receipts.length()==0){alert("No records to export");return}
