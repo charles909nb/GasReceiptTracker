@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 23)
-        versionName = "2.4.4-zoom-controls"
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 24)
+        versionName = "2.4.5-receipt-zoom-fix"
     }
     buildTypes {
         getByName("debug") {
