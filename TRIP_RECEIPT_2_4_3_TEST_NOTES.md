@@ -21,3 +21,11 @@ After scanning and saving fuel first, opening Trips and trying to enter the star
 - Signing certificate/package identity match the previously installed permanent release; higher versionCode.
 
 Status remains open until Neal tests and confirms the release on the phone.
+## Final verification (October 15, 2026)
+- GitHub Actions run 38826200395, attempt 3: SUCCESS; 84 Android instrumentation tests passed.
+- Original Excel worksheet integrity check: PASS.
+- In-place Android debug upgrade 22 to 23 retained private saved data marker: PASS.
+- Permanent release APK versionCode 22 and applicationId org.karuk.gasreceipttracker.preview.
+- Signed with previously stored private release signing key; SHA-256 certificate 8058c63d913384ab6d340d1a88dd7058695d6746948a2e416cab1ceedf420254, identical to permanently signed 2.4.2.
+- Release APK SHA-256: 60db8b0a422d53732990eaf465c5dbfa19d4d4fe4e5bbc09f2710796a27f34ea.
+- Status: READY FOR NEAL TO TEST, not Confirmed Complete. Documents & Review changes remain out of scope.
