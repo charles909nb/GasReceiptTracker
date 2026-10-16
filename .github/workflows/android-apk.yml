@@ -1,7 +1,7 @@
 name: Build Gas Receipt Tracker APK
 on:
   push:
-    branches: [main]
+    branches: [main, phase-2-5-documents]
   workflow_dispatch:
 permissions:
   contents: read
