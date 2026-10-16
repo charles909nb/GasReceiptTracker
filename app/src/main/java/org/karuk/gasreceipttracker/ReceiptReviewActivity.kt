@@ -150,7 +150,7 @@ class ReceiptReviewActivity:Activity() {
         receiptHorizontal=HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled=true
             isFillViewport=true
-            addView(overlay,android.widget.FrameLayout.LayoutParams(receiptBaseWidth,-2))
+            addView(this@ReceiptReviewActivity.overlay,android.widget.FrameLayout.LayoutParams(receiptBaseWidth,-2))
         }
         scroller.addView(receiptHorizontal)
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
@@ -171,10 +171,10 @@ class ReceiptReviewActivity:Activity() {
                     if(!fromUser)return
                     receiptZoom=1f+value/100f
                     zoomLabel.text="Receipt zoom ${(receiptZoom*100).toInt()}%"
-                    overlay.layoutParams=overlay.layoutParams.apply {
+                    this@ReceiptReviewActivity.overlay.layoutParams=this@ReceiptReviewActivity.overlay.layoutParams.apply {
                         width=(receiptBaseWidth*receiptZoom).toInt()
                     }
-                    overlay.requestLayout()
+                    this@ReceiptReviewActivity.overlay.requestLayout()
                 }
                 override fun onStartTrackingTouch(bar:SeekBar?){}
                 override fun onStopTrackingTouch(bar:SeekBar?){}
