@@ -19,6 +19,8 @@ class PdfPreviewActivity : Activity() {
     private var bitmap:Bitmap?=null
     private var index=0
     private var zoom=1f
+    private var furthestPage=-1
+    private var requireAllPages=false
     @Volatile private var closing=false
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
@@ -29,12 +31,18 @@ class PdfPreviewActivity : Activity() {
             view.setPadding(margin+bars.left,margin+bars.top,margin+bars.right,margin+bars.bottom)
             insets
         }
+        requireAllPages=intent.getBooleanExtra("requireAllPages",false)
         val title=TrackerStyle.text(this,"Review PDF - not sent",20f,true,TrackerStyle.red);root.addView(title)
         status=TextView(this).apply{text="Opening document..."};root.addView(status)
         root.setBackgroundColor(TrackerStyle.background)
         val controls=LinearLayout(this)
         fun button(name:String,action:()->Unit){controls.addView(TrackerStyle.button(this,name,false,action).apply{textSize=12f;setPadding(4,4,4,4)},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(2,4,2,4)})}
-        button("Done"){setResult(RESULT_OK);finish()};button("Previous"){if(index>0){index--;render()}}
+        button("Done"){
+            val count=renderer?.pageCount?:0
+            if(requireAllPages&&(count==0||furthestPage<count-1)){
+                Toast.makeText(this,"Review all pages before marking this document complete.",Toast.LENGTH_LONG).show()
+            }else{setResult(RESULT_OK);finish()}
+        };button("Previous"){if(index>0){index--;render()}}
         button("Next"){val n=renderer?.pageCount?:0;if(index+1<n){index++;render()}}
 
         root.addView(controls)
@@ -89,6 +97,7 @@ class PdfPreviewActivity : Activity() {
                 runOnUiThread{
                     if(closing){new.recycle();return@runOnUiThread}
                     val old=bitmap;bitmap=new;image.setImageBitmap(new);old?.recycle()
+                    furthestPage=maxOf(furthestPage,selected)
                     status.text="Page ${selected+1} of ${pdf.pageCount} - review before emailing"
                 }
             }catch(e:Exception){runOnUiThread{if(!closing)status.text="Preview failed: "+e.message}}
