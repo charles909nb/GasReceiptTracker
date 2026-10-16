@@ -43,7 +43,7 @@ class PdfPreviewActivity : Activity() {
             val count=renderer?.pageCount?:0
             if(requireAllPages&&(count==0||furthestPage<count-1)){
                 Toast.makeText(this,"Review all pages before marking this document complete.",Toast.LENGTH_LONG).show()
-            }else{setResult(RESULT_OK);finish()}
+            }else{setResult(if(formStage>=0) RESULT_CANCELED else RESULT_OK);finish()}
         };button("Previous"){if(index>0){index--;render()}}
         button("Next"){val n=renderer?.pageCount?:0;if(index+1<n){index++;render()}else if(formStage>=0){
             if(furthestPage<n-1||n==0)Toast.makeText(this,"Review all pages before continuing.",Toast.LENGTH_LONG).show()
