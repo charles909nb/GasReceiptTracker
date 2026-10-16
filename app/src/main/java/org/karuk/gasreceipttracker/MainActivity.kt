@@ -742,13 +742,35 @@ class MainActivity : Activity() {
         draw("Documents & review");val entries=data("trips");val receipts=data("receipts")
         label("Original Karuk Gas worksheet included - no import needed.",14f)
         label("The signature is placed directly above Signature of Individual Requesting P.O.",14f);requestBanner()
-        action("Review filled Gas requisition (PDF)"){continueDocument("requisition")}
-        action("Save original Gas requisition as Excel (.xls)"){continueDocument("excel")}
-        action("Generate and review complete reimbursement PDF"){continueDocument("packet")}
-        action("Email complete reimbursement packet"){continueDocument("email")}
-        action("Review usage PDF without emailing"){exportPdf(entries,receipts,true)}
-        action("Create and email usage PDF"){exportPdf(entries,receipts,false)}
-        label("Review the PDF here first; the separate Email button opens your email draft.",14f)
+        label("Choose what to review:",14f)
+        val reviewOptions=listOf("Receipt only","Vehicle usage sheet","Purchase Request","Receipt + vehicle usage sheet","Complete reimbursement packet")
+        val reviewChoice=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,reviewOptions)
+        }
+        body.addView(reviewChoice)
+        action("Review selected documents"){
+            when(reviewChoice.selectedItemPosition){
+                0->exportPdf(JSONArray(),receipts,true)
+                1->exportPdf(entries,JSONArray(),true)
+                2->continueDocument("requisition")
+                3->exportPdf(entries,receipts,true)
+                else->continueDocument("packet")
+            }
+        }
+        val receiptReady=receipts.length()==1&&FuelReceiptDraft.complete(receipts.optJSONObject(0)?:JSONObject())
+        action("Email reimbursement packet"){
+            if(receiptReady)continueDocument("email")
+            else alert("Email unavailable: complete and save the fuel receipt first.")
+        }
+        if(!receiptReady)label("Email not ready: a completed fuel receipt is required.",13f)
+        label("Additional document options",16f)
+        action("More document options"){
+            val choices=arrayOf("Save original Gas requisition as Excel (.xls)","Email vehicle usage sheet")
+            android.app.AlertDialog.Builder(this).setTitle("Additional document options")
+                .setItems(choices){_,which->
+                    if(which==0)continueDocument("excel") else exportPdf(entries,receipts,false)
+                }.setNegativeButton("Cancel",null).show()
+        }
         action("Archive without sending"){
             android.app.AlertDialog.Builder(this).setTitle("Archive without sending?")
                 .setMessage("Keep this request in History and move to the next request. It will not be marked sent.")
