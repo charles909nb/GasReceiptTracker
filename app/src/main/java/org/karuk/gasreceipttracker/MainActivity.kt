@@ -839,7 +839,7 @@ class MainActivity : Activity() {
             val file=java.io.File(filesDir,"exports/Vehicle_Usage_"+System.currentTimeMillis()+".pdf").apply{parentFile?.mkdirs()}
             file.outputStream().use{doc.writeTo(it)}
             val uri=OfficialPurchaseRequisition.uri(this,file)
-            if(previewOnly)previewPdf(uri)else sendPacket(uri,receipts)
+            if(previewOnly)previewPdf(uri,prefs.getInt("packetReviewStage",-1)>=0)else sendPacket(uri,receipts)
         }catch(e:Exception){alert("PDF export failed: "+e.message)}finally{doc.close()}
     }
     private fun backupScreen(){
