@@ -28,9 +28,18 @@ class ReceiptHighlightView(context:Context,private val bitmap:Bitmap,
         set(value){field=value;invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val density=resources.displayMetrics.density
+    private var displayWidth=resources.displayMetrics.widthPixels.coerceAtLeast(1)
+    fun setDisplayWidth(width:Int){
+        displayWidth=width.coerceAtLeast(1)
+        layoutParams?.let { it.width=displayWidth;layoutParams=it }
+        requestLayout()
+        invalidate()
+    }
 
     override fun onMeasure(widthMeasureSpec:Int,heightMeasureSpec:Int){
-        val w=MeasureSpec.getSize(widthMeasureSpec).coerceAtLeast(1)
+        // HorizontalScrollView measures children with UNSPECIFIED width (size=0).
+        // Use the explicit zoom width, otherwise the receipt collapses to 1 pixel.
+        val w=displayWidth
         val h=(w.toFloat()*bitmap.height/bitmap.width).roundToInt().coerceAtLeast(1)
         setMeasuredDimension(w,h)
     }
