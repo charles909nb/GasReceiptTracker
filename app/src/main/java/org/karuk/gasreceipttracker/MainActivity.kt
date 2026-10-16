@@ -677,10 +677,18 @@ class MainActivity : Activity() {
         }
         if(requestCode==209){offerEmailConfirmation();return}
         if(requestCode==210){
-            if(resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current()))
-                prefs.edit().putString("reviewedRequestFingerprint",pref("reviewPendingFingerprint")).commit()
+            val valid=resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current())
+            if(valid)prefs.edit().putString("reviewedRequestFingerprint",pref("reviewPendingFingerprint")).commit()
+            val stage=prefs.getInt("packetReviewStage",-1)
             val back=pref("pdfPreviewReturn").ifBlank{"sheets"}
-            prefs.edit().remove("reviewPendingFingerprint").remove("pdfPreviewReturn").commit();show(back);return
+            prefs.edit().remove("reviewPendingFingerprint").remove("pdfPreviewReturn").commit()
+            if(stage>=0){
+                if(valid){
+                    if(stage<2){prefs.edit().putInt("packetReviewStage",stage+1).commit();reviewPacketStage(stage+1)}
+                    else{prefs.edit().remove("packetReviewStage").putString("packetReviewApproved",packetReviewIdentity()).commit();show("sheets");alert("Three documents reviewed. Email is ready.")}
+                }else{prefs.edit().remove("packetReviewStage").remove("packetReviewApproved").commit();show("sheets");alert("Review incomplete. Start again before emailing.")}
+            }else show(back)
+            return
         }
         if(resultCode!=RESULT_OK)return
         if(requestCode==207){
@@ -758,9 +766,10 @@ class MainActivity : Activity() {
             }
         }
         val receiptReady=receipts.length()==1&&FuelReceiptDraft.complete(receipts.optJSONObject(0)?:JSONObject())
-        action("Email reimbursement packet"){
-            if(receiptReady)continueDocument("email")
-            else alert("Email unavailable: complete and save the fuel receipt first.")
+        val approved=pref("packetReviewApproved")==packetReviewIdentity()
+        action(if(approved)"Email reimbursement packet" else "Review all 3 documents before emailing"){
+            if(!receiptReady)alert("Complete and save the fuel receipt first.")
+            else if(!approved)startPacketReview() else continueDocument("email")
         }
         if(!receiptReady)label("Email not ready: a completed fuel receipt is required.",13f)
         label("Additional document options",16f)
@@ -798,10 +807,13 @@ class MainActivity : Activity() {
             finally{runOnUiThread{documentBusy=false;if(!isFinishing)progress.dismiss()}}
         }.start()
     }
+    private fun packetReviewIdentity():String=workflow.fingerprint(workflow.current())+"|"+data("trips").toString()+"|"+data("receipts").toString()+"|"+pref("signatureFile")
+    private fun startPacketReview(){prefs.edit().remove("packetReviewApproved").putInt("packetReviewStage",0).commit();reviewPacketStage(0)}
+    private fun reviewPacketStage(stage:Int){when(stage){0->continueDocument("packet-review-pr");1->exportPdf(JSONArray(),data("receipts"),true,false);2->exportPdf(data("trips"),JSONArray(),true)}}
     private fun previewPdf(uri:Uri,track:Boolean=false){
         if(track)prefs.edit().putString("reviewPendingFingerprint",workflow.fingerprint(workflow.current())).commit()
         prefs.edit().putString("pdfPreviewReturn",currentScreen).commit()
-        startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
+        startActivityForResult(Intent(this,PdfPreviewActivity::class.java).setData(uri).putExtra("requireAllPages",prefs.getInt("packetReviewStage",-1)>=0).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),210)
     }
     private fun exportPdf(entries:JSONArray,receipts:JSONArray,previewOnly:Boolean=false,includeUsage:Boolean=true){
         if(entries.length()==0&&receipts.length()==0){alert("No records to export");return}
@@ -873,11 +885,12 @@ class MainActivity : Activity() {
             prefs.edit().putString("pendingSignatureAction",operation).putString("pendingSignatureRequest",workflow.current().getString("id")).commit()
             show("sign");return
         }
+        if(operation=="email"&&pref("packetReviewApproved")!=packetReviewIdentity()){alert("Review all three documents again before emailing.");return}
         if(operation=="email"&&workflow.pendingEmail()!=null){offerEmailConfirmation(true);return}
         val entries=data("trips");val signature=java.io.File(pref("signatureFile"));val driver=pref("driver");val card=pref("cardLast4");val req=workflow.current()
         runDocumentWork{
             when(operation){
-                "requisition","excel"->{
+                "requisition","excel","packet-review-pr"->{
                     val prepared=OfficialPurchaseRequisition.prepare(this,receipts.getJSONObject(0),driver,card,signature)
                     TrackerDatabase(this).use {
                         it.recordDocument(req.getString("id"), "gas_excel", OfficialPurchaseRequisition.uri(this,prepared.excel).toString())
