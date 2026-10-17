@@ -423,7 +423,21 @@ class MainActivity : Activity() {
         label("Pending coworker identities: "+pending.length(),14f)
         for(i in 0 until pending.length()){
             val person=pending.optJSONObject(i)?:continue
-            label(person.optString("name")+" — "+person.optString("email")+"\n"+person.optString("fingerprint"),13f)
+            label(person.optString("name")+" — "+person.optString("email")+"\n"+person.optString("fingerprint")+"\nNot approved for sharing",13f)
+            action("Remove pending "+person.optString("name")){
+                android.app.AlertDialog.Builder(this).setTitle("Remove pending employee?")
+                    .setMessage("Remove "+person.optString("name")+" from pending identities? No records will be changed.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Remove"){_,_->
+                        val current=data("employeePendingIdentities")
+                        val remaining=JSONArray()
+                        for(j in 0 until current.length()){
+                            val entry=current.optJSONObject(j)?:continue
+                            if(entry.optString("fingerprint")!=person.optString("fingerprint"))remaining.put(entry)
+                        }
+                        store("employeePendingIdentities",remaining)
+                        show("employee")
+                    }.show()
+            }
         }
         action("Show my QR identity"){
             try{
