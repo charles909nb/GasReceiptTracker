@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 26)
-        versionName = "2.5.1-packet-review"
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 27)
+        versionName = "2.6.0-employee-pairing"
     }
     buildTypes {
         getByName("debug") {
@@ -37,6 +37,7 @@ android {
 }
 dependencies {
     implementation("androidx.core:core:1.13.1")
+    implementation("com.google.zxing:core:3.5.3")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
