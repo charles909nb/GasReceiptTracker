@@ -352,7 +352,7 @@ class MainActivity : Activity() {
             if(documentBusy){alert("Please wait for the document to finish.");return}
             currentScreen=where
             when(where){"fuel"->fuel();"sheets"->sheets();"email"->emailSettings();"sign"->signatureScreen();"backup"->backupScreen()
-                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"finance"->financePackets();"mileage"->vehicleMileage();"more"->moreScreen();else->trips()}
+                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"finance"->financePackets();"mileage"->vehicleMileage();"more"->moreScreen();"employee"->employeeScreen();else->trips()}
         }catch(e:Exception){alert(e.message.orEmpty())}
     }
     override fun onSaveInstanceState(outState:Bundle){outState.putString("screen",currentScreen);outState.putString("camera",cameraUri?.toString());super.onSaveInstanceState(outState)}
@@ -376,6 +376,24 @@ class MainActivity : Activity() {
         action("Profile and vehicles"){show("setup")};action("Email templates and CC"){show("email")}
         action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
         action("Review learned receipt layouts"){learningScreen()}
+        action("Employee QR identity"){show("employee")}
+    }
+    private fun employeeScreen(){
+        draw("Employee connection")
+        label("Step 1: Show your public employee QR identity to a coworker. Private keys stay on this phone. Scanning, mutual approval, and encrypted sharing are not enabled yet.",14f)
+        val name=android.widget.EditText(this).apply{hint="Employee name";setText(pref("employeePairName"))}
+        val email=android.widget.EditText(this).apply{hint="Employee email";setText(pref("employeePairEmail"));inputType=android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS}
+        body.addView(name);body.addView(email)
+        action("Show my QR identity"){
+            try{
+                val n=name.text.toString().trim();val e=email.text.toString().trim()
+                val payload=EmployeeIdentity.payload(n,e)
+                prefs.edit().putString("employeePairName",n).putString("employeePairEmail",e).commit()
+                val image=android.widget.ImageView(this).apply{setImageBitmap(EmployeeIdentity.qr(payload));adjustViewBounds=true}
+                val content=android.widget.LinearLayout(this).apply{orientation=android.widget.LinearLayout.VERTICAL;addView(image);addView(TrackerStyle.text(this@MainActivity,"Verify fingerprint with coworker: "+EmployeeIdentity.fingerprint(),13f,true,TrackerStyle.ink))}
+                android.app.AlertDialog.Builder(this).setTitle("Public employee identity").setView(content).setPositiveButton("Close",null).show()
+            }catch(e:Exception){alert("Cannot show identity: "+e.message)}
+        }
     }
     private fun learningScreen(){
         draw("Private receipt learning")
