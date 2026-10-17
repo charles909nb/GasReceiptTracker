@@ -379,7 +379,7 @@ class MainActivity : Activity() {
         action("Employee QR identity"){show("employee")}
     }
     private fun scanEmployeeQr(){
-        val scanner=com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient()
+        val scanner=com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this)
         scanner.startScan().addOnSuccessListener { barcode ->
             try{
                 val raw=barcode.rawValue?:throw IllegalArgumentException("No QR data found")
