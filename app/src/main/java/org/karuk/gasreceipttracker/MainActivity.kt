@@ -380,15 +380,18 @@ class MainActivity : Activity() {
     }
     private fun employeeScreen(){
         draw("Employee connection")
-        label("Step 1: Show your public employee QR identity to a coworker. Private keys stay on this phone. Scanning, mutual approval, and encrypted sharing are not enabled yet.",14f)
-        val name=android.widget.EditText(this).apply{hint="Employee name";setText(pref("employeePairName"))}
-        val email=android.widget.EditText(this).apply{hint="Employee email";setText(pref("employeePairEmail"));inputType=android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS}
-        body.addView(name);body.addView(email)
+        label("Your QR identity uses the name and email already saved in Profile. To change them, use Profile and vehicles.",14f)
+        val name=pref("driver").trim()
+        val email=pref("myEmail").trim()
+        label("Name: "+name+"\nEmail: "+email,16f)
+        if(name.isBlank()||!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()){
+            label("Complete your name and email in Profile and vehicles before showing your QR identity.",14f)
+            action("Open profile"){show("setup")}
+            return
+        }
         action("Show my QR identity"){
             try{
-                val n=name.text.toString().trim();val e=email.text.toString().trim()
-                val payload=EmployeeIdentity.payload(n,e)
-                prefs.edit().putString("employeePairName",n).putString("employeePairEmail",e).commit()
+                val payload=EmployeeIdentity.payload(pref("driver").trim(),pref("myEmail").trim())
                 val image=android.widget.ImageView(this).apply{setImageBitmap(EmployeeIdentity.qr(payload));adjustViewBounds=true}
                 val content=android.widget.LinearLayout(this).apply{orientation=android.widget.LinearLayout.VERTICAL;addView(image);addView(TrackerStyle.text(this@MainActivity,"Verify fingerprint with coworker: "+EmployeeIdentity.fingerprint(),13f,true,TrackerStyle.ink))}
                 android.app.AlertDialog.Builder(this).setTitle("Public employee identity").setView(content).setPositiveButton("Close",null).show()
