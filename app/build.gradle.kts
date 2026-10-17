@@ -10,8 +10,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 28)
-        versionName = "2.6.1-qr-scanning"
+        versionCode = (project.findProperty("testVersionCodeOverride")?.toString()?.toIntOrNull() ?: 29)
+        versionName = "2.6.2-combined-sharing"
     }
     buildTypes {
         getByName("debug") {
