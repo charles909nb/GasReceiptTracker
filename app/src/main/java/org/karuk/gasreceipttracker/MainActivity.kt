@@ -378,6 +378,35 @@ class MainActivity : Activity() {
         action("Review learned receipt layouts"){learningScreen()}
         action("Employee QR identity"){show("employee")}
     }
+    private fun scanEmployeeQr(){
+        val scanner=com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient()
+        scanner.startScan().addOnSuccessListener { barcode ->
+            try{
+                val raw=barcode.rawValue?:throw IllegalArgumentException("No QR data found")
+                val candidate=JSONObject(raw)
+                require(candidate.optString("format")=="karuk-employee-pair-v1"){"This is not a Gas Receipt Tracker employee QR"}
+                val name=candidate.getString("name").trim()
+                val email=candidate.getString("email").trim()
+                val key=android.util.Base64.decode(candidate.getString("publicKey"),android.util.Base64.DEFAULT)
+                val keyObject=java.security.KeyFactory.getInstance("EC").generatePublic(java.security.spec.X509EncodedKeySpec(key))
+                val fingerprint=java.security.MessageDigest.getInstance("SHA-256").digest(keyObject.encoded)
+                    .joinToString(""){"%02X".format(it)}.chunked(4).take(8).joinToString("-")
+                require(fingerprint==candidate.optString("fingerprint")){"QR fingerprint mismatch"}
+                require(name.isNotBlank()&&android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()){"Invalid employee identity"}
+                require(fingerprint!=EmployeeIdentity.fingerprint()){"This is your own QR"}
+                android.app.AlertDialog.Builder(this).setTitle("Review employee identity")
+                    .setMessage("Name: "+name+"\nEmail: "+email+"\nFingerprint: "+fingerprint+
+                        "\n\nVerify the fingerprint with your coworker. This step saves a pending identity only; secure sharing is not yet enabled.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Save pending identity"){_,_->
+                        val pending=data("employeePendingIdentities")
+                        if((0 until pending.length()).none{pending.optJSONObject(it)?.optString("fingerprint")==fingerprint}){
+                            pending.put(candidate);store("employeePendingIdentities",pending)
+                        }
+                        show("employee")
+                    }.show()
+            }catch(e:Exception){alert("Cannot accept QR: "+e.message)}
+        }.addOnFailureListener{alert("QR scan failed: "+it.message)}
+    }
     private fun employeeScreen(){
         draw("Employee connection")
         label("Your QR identity uses the name and email already saved in Profile. To change them, use Profile and vehicles.",14f)
@@ -388,6 +417,13 @@ class MainActivity : Activity() {
             label("Complete your name and email in Profile and vehicles before showing your QR identity.",14f)
             action("Open profile"){show("setup")}
             return
+        }
+        action("Scan coworker QR"){scanEmployeeQr()}
+        val pending=data("employeePendingIdentities")
+        label("Pending coworker identities: "+pending.length(),14f)
+        for(i in 0 until pending.length()){
+            val person=pending.optJSONObject(i)?:continue
+            label(person.optString("name")+" — "+person.optString("email")+"\n"+person.optString("fingerprint"),13f)
         }
         action("Show my QR identity"){
             try{
