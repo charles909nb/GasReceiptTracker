@@ -801,6 +801,29 @@ class MainActivity : Activity() {
             prefs.edit().remove("receiptReviewReturn").commit()
             show(back);return
         }
+        if(requestCode==204){
+            if(resultCode==RESULT_OK){
+                try{
+                    val pages=GmsDocumentScanningResult.fromActivityResultIntent(data)?.pages.orEmpty()
+                    require(pages.isNotEmpty()){"No pages scanned"}
+                    val paths=JSONArray()
+                    for(page in pages){
+                        val file=java.io.File(filesDir,"previous_driver_sheet_"+UUID.randomUUID()+".jpg")
+                        contentResolver.openInputStream(page.imageUri).use{input->
+                            requireNotNull(input){"Unable to read scanned page"}
+                            file.outputStream().use{input.copyTo(it)}
+                        }
+                        paths.put(file.absolutePath)
+                    }
+                    val sheets=data("previousDriverScans")
+                    sheets.put(JSONObject().put("id",UUID.randomUUID().toString())
+                        .put("createdAt",now).put("files",paths).put("pages",paths.length()))
+                    check(prefs.edit().putString("previousDriverScans",sheets.toString()).commit()){"Unable to save sheet"}
+                    alert("Saved "+paths.length()+" page(s). Enter the trips after reviewing the sheet.")
+                }catch(e:Exception){alert("Mileage sheet save failed: "+e.message)}
+            }
+            show("previous");return
+        }
         if(requestCode==209){offerEmailConfirmation();return}
         if(requestCode==210){
             val valid=resultCode==RESULT_OK&&pref("reviewPendingFingerprint")==workflow.fingerprint(workflow.current())
