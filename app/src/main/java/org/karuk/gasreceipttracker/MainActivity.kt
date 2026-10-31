@@ -439,7 +439,7 @@ class MainActivity : Activity() {
             .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
             .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL).build()
         GmsDocumentScanning.getClient(options).getStartScanIntent(this)
-            .addOnSuccessListener{startActivityForResult(it,204)}
+            .addOnSuccessListener{startIntentSenderForResult(it,204,null,0,0,0)}
             .addOnFailureListener{alert("Scanner unavailable: "+it.message)}
     }
     private fun moreScreen(){
