@@ -414,6 +414,25 @@ class MainActivity : Activity() {
         }
         val scans=data("previousDriverScans")
         label("Saved scanned sheets: "+scans.length(),14f)
+        for(i in scans.length()-1 downTo 0){
+            val sheet=scans.optJSONObject(i)?:continue
+            val files=sheet.optJSONArray("files")?:continue
+            label(sheet.optString("createdAt")+" - "+files.length()+" page(s)",13f)
+            for(page in 0 until files.length()){
+                val path=files.optString(page)
+                action("Review page "+(page+1)+" of scan "+(i+1)){
+                    val file=java.io.File(path)
+                    if(!file.isFile){alert("Scanned page unavailable");return@action}
+                    val image=ImageView(this).apply{
+                        setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                        adjustViewBounds=true
+                    }
+                    val scroll=ScrollView(this).apply{addView(image)}
+                    android.app.AlertDialog.Builder(this).setTitle("Scanned mileage sheet")
+                        .setView(scroll).setPositiveButton("Close",null).show()
+                }
+            }
+        }
     }
     private fun scanPreviousDriverSheet(){
         val options=GmsDocumentScannerOptions.Builder()
