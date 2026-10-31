@@ -352,7 +352,7 @@ class MainActivity : Activity() {
             if(documentBusy){alert("Please wait for the document to finish.");return}
             currentScreen=where
             when(where){"fuel"->fuel();"sheets"->sheets();"email"->emailSettings();"sign"->signatureScreen();"backup"->backupScreen()
-                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"finance"->financePackets();"mileage"->vehicleMileage();"more"->moreScreen();"employee"->employeeScreen();else->trips()}
+                "setup"->setupScreen();"history"->receiptHistory();"requests"->requestList();"finance"->financePackets();"mileage"->vehicleMileage();"more"->moreScreen();"employee"->employeeScreen();"previous"->previousDriverScreen();else->trips()}
         }catch(e:Exception){alert(e.message.orEmpty())}
     }
     override fun onSaveInstanceState(outState:Bundle){outState.putString("screen",currentScreen);outState.putString("camera",cameraUri?.toString());super.onSaveInstanceState(outState)}
@@ -377,6 +377,7 @@ class MainActivity : Activity() {
         action("Sign current request"){show("sign")};action("Backup and restore"){show("backup")}
         action("Review learned receipt layouts"){learningScreen()}
         action("Employee QR identity"){show("employee")}
+        action("Previous driver trip sheets"){show("previous")}
     }
     private fun scanEmployeeQr(){
         val scanner=com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this)
