@@ -369,6 +369,60 @@ class MainActivity : Activity() {
         // Prompt only if a pending email exists; user must explicitly confirm Send.
         if(hasFocus)window.decorView.post{offerEmailConfirmation()}
     }
+
+    private fun previousDriverScreen(){
+        draw("Previous driver trip sheets")
+        label("Enter separate trips for multiple dates. These records never overwrite your own trips.",14f)
+        action("Scan mileage sheet"){scanPreviousDriverSheet()}
+        val name=edit("Previous driver's name",pref("previousDriverName"))
+        val vehicle=edit("Vehicle",pref("previousDriverVehicle").ifBlank{pref("vehicle")})
+        val date=edit("Trip date (MM/DD/YYYY)")
+        val timeIn=edit("Start time")
+        val timeOut=edit("End time")
+        val origin=edit("Starting location")
+        val destination=edit("Destinations and stops")
+        val purpose=edit("Purpose of travel")
+        val start=edit("Starting odometer",number=true)
+        val end=edit("Ending odometer",number=true)
+        action("Save previous driver trip"){
+            val a=start.text.toString().toDoubleOrNull()
+            val b=end.text.toString().toDoubleOrNull()
+            if(name.text.isBlank()||vehicle.text.isBlank()||date.text.isBlank()||
+                destination.text.isBlank()||purpose.text.isBlank()||a==null||b==null||
+                !a.isFinite()||!b.isFinite()||b<a){
+                alert("Enter driver, vehicle, date, destination, purpose and valid mileage");return@action
+            }
+            val entry=JSONObject().put("id",UUID.randomUUID().toString())
+                .put("driver",name.text.toString()).put("vehicle",vehicle.text.toString())
+                .put("date",date.text.toString()).put("startTime",timeIn.text.toString())
+                .put("endTime",timeOut.text.toString()).put("origin",origin.text.toString())
+                .put("destination",destination.text.toString()).put("purpose",purpose.text.toString())
+                .put("startOdometer",a).put("endOdometer",b).put("createdAt",now)
+            val records=data("previousDriverTrips");records.put(entry)
+            check(prefs.edit().putString("previousDriverTrips",records.toString())
+                .putString("previousDriverName",name.text.toString())
+                .putString("previousDriverVehicle",vehicle.text.toString()).commit()){"Save failed"}
+            show("previous")
+        }
+        val records=data("previousDriverTrips")
+        label("Saved previous driver trips: "+records.length(),16f)
+        for(i in records.length()-1 downTo 0){
+            val t=records.optJSONObject(i)?:continue
+            label(t.optString("date")+"  "+t.optString("driver")+" / "+t.optString("vehicle")+
+                "\n"+t.optString("origin")+" to "+t.optString("destination")+
+                "\n"+t.optString("purpose")+"  "+(t.optDouble("endOdometer")-t.optDouble("startOdometer"))+" miles",14f)
+        }
+        val scans=data("previousDriverScans")
+        label("Saved scanned sheets: "+scans.length(),14f)
+    }
+    private fun scanPreviousDriverSheet(){
+        val options=GmsDocumentScannerOptions.Builder()
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL).build()
+        GmsDocumentScanning.getClient(options).getStartScanIntent(this)
+            .addOnSuccessListener{startActivityForResult(it,204)}
+            .addOnFailureListener{alert("Scanner unavailable: "+it.message)}
+    }
     private fun moreScreen(){
         draw("Settings & tools")
         val version=runCatching{packageManager.getPackageInfo(packageName,0).versionName}.getOrNull()?:"current"
