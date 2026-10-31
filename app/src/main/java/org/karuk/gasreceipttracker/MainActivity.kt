@@ -539,6 +539,7 @@ class MainActivity : Activity() {
     }
     private fun trips(){
         draw("Your travel workspace");requestBanner();action("New travel / PR"){newRequestDialog(false)}
+        action("Previous driver mileage sheets - Enter or Scan"){show("previous")}
         val driverName=pref("driver");val department=pref("department");label(driverName+"  /  "+department,14f)
         val vehicle=vehiclePicker(pref("vehicle"));val entries=data("trips")
         val receipts=data("receipts")
