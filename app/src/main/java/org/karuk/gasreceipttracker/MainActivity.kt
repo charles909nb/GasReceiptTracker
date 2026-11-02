@@ -369,69 +369,186 @@ class MainActivity : Activity() {
         // Prompt only if a pending email exists; user must explicitly confirm Send.
         if(hasFocus)window.decorView.post{offerEmailConfirmation()}
     }
+    private fun usageSheets():JSONArray=data("vehicleUsageSheets")
+    private fun activeUsageSheet(vehicle:String):JSONObject? {
+        val sheets=usageSheets()
+        for(i in sheets.length()-1 downTo 0){
+            val item=sheets.optJSONObject(i)?:continue
+            if(item.optString("vehicle")==vehicle && item.optString("status")=="open")return item
+        }
+        return null
+    }
     private fun previousDriverScreen(){
-        draw("Previous driver trip sheets")
-        label("Enter separate trips for multiple dates. These records never overwrite your own trips.",14f)
-        action("Scan mileage sheet"){scanPreviousDriverSheet()}
-        val name=edit("Previous driver's name",pref("previousDriverName"))
-        val vehicle=edit("Vehicle",pref("previousDriverVehicle").ifBlank{pref("vehicle")})
-        val date=edit("Trip date (MM/DD/YYYY)")
-        val timeIn=edit("Start time")
-        val timeOut=edit("End time")
-        val origin=edit("Starting location")
-        val destination=edit("Destinations and stops")
-        val purpose=edit("Purpose of travel")
-        val start=edit("Starting odometer",number=true)
-        val end=edit("Ending odometer",number=true)
-        action("Save previous driver trip"){
-            val a=start.text.toString().toDoubleOrNull()
-            val b=end.text.toString().toDoubleOrNull()
-            if(name.text.isBlank()||vehicle.text.isBlank()||date.text.isBlank()||
-                destination.text.isBlank()||purpose.text.isBlank()||a==null||b==null||
-                !a.isFinite()||!b.isFinite()||b<a){
-                alert("Enter driver, vehicle, date, destination, purpose and valid mileage");return@action
+        draw("Vehicle usage sheets")
+        label("A usage sheet covers multiple drivers and trips. Fueling does not close the sheet; close it after the last trip and final fueling.",14f)
+        val vehicle=edit("Vehicle number",pref("usageVehicle").ifBlank{pref("vehicle")})
+        action("Open or create usage sheet"){
+            val v=vehicle.text.toString().trim()
+            if(v.isBlank()){alert("Enter vehicle number");return@action}
+            prefs.edit().putString("usageVehicle",v).commit()
+            if(activeUsageSheet(v)==null){
+                val sheets=usageSheets()
+                sheets.put(JSONObject().put("id",UUID.randomUUID().toString()).put("vehicle",v)
+                    .put("status","open").put("createdAt",now).put("trips",JSONArray())
+                    .put("fuelReceiptIds",JSONArray()).put("scanIds",JSONArray()))
+                store("vehicleUsageSheets",sheets)
             }
-            val entry=JSONObject().put("id",UUID.randomUUID().toString())
-                .put("driver",name.text.toString()).put("vehicle",vehicle.text.toString())
-                .put("date",date.text.toString()).put("startTime",timeIn.text.toString())
-                .put("endTime",timeOut.text.toString()).put("origin",origin.text.toString())
-                .put("destination",destination.text.toString()).put("purpose",purpose.text.toString())
-                .put("startOdometer",a).put("endOdometer",b).put("createdAt",now)
-            val records=data("previousDriverTrips");records.put(entry)
-            check(prefs.edit().putString("previousDriverTrips",records.toString())
-                .putString("previousDriverName",name.text.toString())
-                .putString("previousDriverVehicle",vehicle.text.toString()).commit()){"Save failed"}
             show("previous")
         }
-        val records=data("previousDriverTrips")
-        label("Saved previous driver trips: "+records.length(),16f)
-        for(i in records.length()-1 downTo 0){
-            val t=records.optJSONObject(i)?:continue
-            label(t.optString("date")+"  "+t.optString("driver")+" / "+t.optString("vehicle")+
-                "\n"+t.optString("origin")+" to "+t.optString("destination")+
-                "\n"+t.optString("purpose")+"  "+(t.optDouble("endOdometer")-t.optDouble("startOdometer"))+" miles",14f)
+        val selected=vehicle.text.toString().trim()
+        val sheet=activeUsageSheet(selected)
+        if(sheet==null){
+            label("No active usage sheet for this vehicle. Open or create one above.",14f)
+        }else{
+            label("ACTIVE USAGE SHEET - Vehicle "+selected,18f)
+            action("Scan paper vehicle usage sheet"){scanPreviousDriverSheet()}
+            val name=edit("Driver name",pref("previousDriverName"))
+            val date=edit("Start date (MM/DD/YYYY)")
+            val endDate=edit("End date (MM/DD/YYYY)")
+            val origin=edit("Starting location")
+            val destination=edit("Destination / stops")
+            val purpose=edit("Purpose of trip")
+            val start=edit("Start odometer",number=true)
+            val end=edit("End odometer",number=true)
+            action("Add trip to this usage sheet"){
+                val first=start.text.toString().toDoubleOrNull()
+                val last=end.text.toString().toDoubleOrNull()
+                if(name.text.isBlank()||date.text.isBlank()||first==null||last==null||last<first){
+                    alert("Enter driver, start date, and valid start/end odometer readings");return@action
+                }
+                val sheets=usageSheets()
+                for(i in 0 until sheets.length()){
+                    val current=sheets.optJSONObject(i)?:continue
+                    if(current.optString("id")!=sheet.optString("id"))continue
+                    current.optJSONArray("trips")!!.put(JSONObject()
+                        .put("id",UUID.randomUUID().toString()).put("driver",name.text.toString())
+                        .put("startDate",date.text.toString()).put("endDate",endDate.text.toString())
+                        .put("origin",origin.text.toString()).put("destination",destination.text.toString())
+                        .put("purpose",purpose.text.toString()).put("startOdometer",first).put("endOdometer",last))
+                }
+                store("vehicleUsageSheets",sheets)
+                prefs.edit().putString("previousDriverName",name.text.toString()).commit()
+                show("previous")
+            }
+            val trips=sheet.optJSONArray("trips")?:JSONArray()
+            label("Trips on this sheet: "+trips.length(),16f)
+            for(i in 0 until trips.length()){
+                val t=trips.optJSONObject(i)?:continue
+                label(t.optString("driver")+"  "+t.optString("startDate")+" to "+t.optString("endDate")+
+                    "\\n"+t.optString("destination")+" - "+t.optString("purpose")+
+                    "\\n"+t.optDouble("startOdometer")+" / "+t.optDouble("endOdometer"),14f)
+                action("Edit trip "+(i+1)){
+                    val inputs=arrayOf("Driver","Start date","End date","Starting location","Destination / stops","Purpose","Start odometer","End odometer")
+                    val keys=arrayOf("driver","startDate","endDate","origin","destination","purpose","startOdometer","endOdometer")
+                    val layout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+                    val fields=keys.mapIndexed{j,key->EditText(this).apply{
+                        hint=inputs[j];setSingleLine(true);setText(t.optString(key));layout.addView(this)
+                    }}
+                    android.app.AlertDialog.Builder(this).setTitle("Edit trip")
+                        .setView(ScrollView(this).apply{addView(layout)})
+                        .setPositiveButton("Save"){_,_->
+                            val first=fields[6].text.toString().toDoubleOrNull()
+                            val last=fields[7].text.toString().toDoubleOrNull()
+                            if(first==null||last==null||last<first){alert("Invalid odometer readings")}
+                            else{
+                                val sheets=usageSheets()
+                                for(k in 0 until sheets.length()){
+                                    val sh=sheets.optJSONObject(k)?:continue
+                                    if(sh.optString("id")!=sheet.optString("id"))continue
+                                    val trip=sh.optJSONArray("trips")?.optJSONObject(i)?:continue
+                                    keys.forEachIndexed{j,key->trip.put(key,if(j>=6)fields[j].text.toString().toDouble() else fields[j].text.toString())}
+                                }
+                                store("vehicleUsageSheets",sheets);show("previous")
+                            }
+                        }.setNegativeButton("Cancel",null).show()
+                }
+            }
+            label("Link fuel receipts (multiple receipts may belong to one sheet)",15f)
+            val receipts=data("receipts")
+            val linked=sheet.optJSONArray("fuelReceiptIds")?:JSONArray()
+            for(i in 0 until receipts.length()){
+                val receipt=receipts.optJSONObject(i)?:continue
+                val id=receipt.optString("id")
+                if(id.isBlank())continue
+                val isLinked=(0 until linked.length()).any{linked.optString(it)==id}
+                label(receipt.optString("date").ifBlank{receipt.optString("createdAt")}+
+                    "  "+receipt.optString("station")+"  $"+receipt.optString("total")+
+                    if(isLinked)"  [Linked]" else "",13f)
+                action((if(isLinked)"Unlink" else "Link")+" fuel receipt "+(i+1)){
+                    val sheets=usageSheets()
+                    for(k in 0 until sheets.length()){
+                        val sh=sheets.optJSONObject(k)?:continue
+                        if(sh.optString("id")!=sheet.optString("id"))continue
+                        val ids=sh.optJSONArray("fuelReceiptIds")?:JSONArray()
+                        val updated=JSONArray()
+                        for(j in 0 until ids.length())if(ids.optString(j)!=id)updated.put(ids.optString(j))
+                        if(!isLinked)updated.put(id)
+                        sh.put("fuelReceiptIds",updated)
+                    }
+                    store("vehicleUsageSheets",sheets);show("previous")
+                }
+            }
+            label("Linked fuel receipts: "+linked.length(),14f)
+            action("Close usage sheet after final trip and fueling"){
+                android.app.AlertDialog.Builder(this).setTitle("Close usage sheet?")
+                    .setMessage("Only close after the final trip and final fuel purchase. All entries remain available.")
+                    .setPositiveButton("Close sheet"){_,_->
+                        val sheets=usageSheets()
+                        for(k in 0 until sheets.length()){
+                            val sh=sheets.optJSONObject(k)?:continue
+                            if(sh.optString("id")==sheet.optString("id"))sh.put("status","closed").put("closedAt",now)
+                        }
+                        store("vehicleUsageSheets",sheets);show("previous")
+                    }.setNegativeButton("Cancel",null).show()
+            }
         }
         val scans=data("previousDriverScans")
-        label("Saved scanned sheets: "+scans.length(),14f)
+        label("Original scanned sheets: "+scans.length(),14f)
         for(i in scans.length()-1 downTo 0){
-            val sheet=scans.optJSONObject(i)?:continue
-            val files=sheet.optJSONArray("files")?:continue
-            label(sheet.optString("createdAt")+" - "+files.length()+" page(s)",13f)
-            for(page in 0 until files.length()){
-                val path=files.optString(page)
-                action("Review page "+(page+1)+" of scan "+(i+1)){
-                    val file=java.io.File(path)
-                    if(!file.isFile){alert("Scanned page unavailable");return@action}
-                    val image=ImageView(this).apply{
-                        setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
-                        adjustViewBounds=true
-                    }
-                    val scroll=ScrollView(this).apply{addView(image)}
-                    android.app.AlertDialog.Builder(this).setTitle("Scanned mileage sheet")
-                        .setView(scroll).setPositiveButton("Close",null).show()
+            val scan=scans.optJSONObject(i)?:continue
+            val paths=scan.optJSONArray("files")?:continue
+            label(scan.optString("createdAt")+" - "+paths.length()+" page(s)",13f)
+            action("Review extracted text for scan "+(i+1)){reviewUsageScan(i)}
+            for(j in 0 until paths.length()){
+                val p=paths.optString(j)
+                action("View original page "+(j+1)+" of scan "+(i+1)){
+                    val file=java.io.File(p)
+                    if(!file.isFile){alert("Page not found");return@action}
+                    val img=ImageView(this).apply{setImageBitmap(BitmapFactory.decodeFile(p));adjustViewBounds=true}
+                    android.app.AlertDialog.Builder(this).setTitle("Original usage sheet")
+                        .setView(ScrollView(this).apply{addView(img)})
+                        .setPositiveButton("Close",null).show()
                 }
             }
         }
+        val sheets=usageSheets()
+        for(i in sheets.length()-1 downTo 0){
+            val sh=sheets.optJSONObject(i)?:continue
+            if(sh.optString("status")=="closed"){
+                action("Reopen closed sheet - "+sh.optString("vehicle")+" / "+sh.optString("createdAt")){
+                    prefs.edit().putString("usageVehicle",sh.optString("vehicle")).commit()
+                    val all=usageSheets()
+                    for(j in 0 until all.length())if(all.optJSONObject(j)?.optString("id")==sh.optString("id"))
+                        all.optJSONObject(j)?.put("status","open")
+                    store("vehicleUsageSheets",all);show("previous")
+                }
+            }
+        }
+    }
+    private fun reviewUsageScan(index:Int){
+        val scans=data("previousDriverScans")
+        val scan=scans.optJSONObject(index)?:return
+        val input=EditText(this).apply{
+            setText(scan.optString("recognizedText"));minLines=8
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Review scanned sheet text")
+            .setMessage("Check every handwritten entry against the original pages. OCR may be inaccurate. Add verified trips to the usage sheet.")
+            .setView(input).setPositiveButton("Save corrections"){_,_->
+                val all=data("previousDriverScans")
+                all.optJSONObject(index)?.put("recognizedText",input.text.toString())
+                store("previousDriverScans",all)
+            }.setNegativeButton("Cancel",null).show()
     }
     private fun scanPreviousDriverSheet(){
         val options=GmsDocumentScannerOptions.Builder()
@@ -824,7 +941,25 @@ class MainActivity : Activity() {
                     sheets.put(JSONObject().put("id",UUID.randomUUID().toString())
                         .put("createdAt",now).put("files",paths).put("pages",paths.length()))
                     check(prefs.edit().putString("previousDriverScans",sheets.toString()).commit()){"Unable to save sheet"}
-                    alert("Saved "+paths.length()+" page(s). Enter the trips after reviewing the sheet.")
+                    val lastIndex=sheets.length()-1
+                    val recognized=ArrayList<String>()
+                    var pending=paths.length()
+                    for(k in 0 until paths.length()){
+                        val image=com.google.mlkit.vision.common.InputImage.fromFilePath(this,Uri.fromFile(java.io.File(paths.getString(k))))
+                        com.google.mlkit.vision.text.TextRecognition.getClient(
+                            com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                            .process(image).addOnSuccessListener{recognized.add("Page "+(k+1)+"\\n"+it.text)}
+                            .addOnCompleteListener{
+                                pending--
+                                if(pending==0){
+                                    val all=data("previousDriverScans")
+                                    all.optJSONObject(lastIndex)?.put("recognizedText",recognized.joinToString("\\n\\n"))
+                                    store("previousDriverScans",all)
+                                    show("previous")
+                                    reviewUsageScan(lastIndex)
+                                }
+                            }
+                    }
                 }catch(e:Exception){alert("Mileage sheet save failed: "+e.message)}
             }
             show("previous");return
